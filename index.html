@@ -1,0 +1,215 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <meta name="description" content="Daily U.S. mortgage rates with multi-source comparison, driver-rate breakdown, macro indicators, and news." />
+  <title>Daily Mortgage Rates · Dashboard</title>
+
+  <link rel="preconnect" href="https://unpkg.com" crossorigin />
+  <link rel="stylesheet" href="./assets/styles.css" />
+
+  <script src="https://unpkg.com/lightweight-charts@4.2.0/dist/lightweight-charts.standalone.production.js" defer></script>
+  <script src="./config.js" defer></script>
+  <script src="./assets/app.js" type="module"></script>
+</head>
+<body>
+  <a class="skip-link" href="#rate-table">Skip to rates</a>
+
+  <header class="topbar">
+    <div class="topbar-inner">
+      <div class="brand">
+        <span class="brand-mark" aria-hidden="true">%</span>
+        <div>
+          <h1>Daily Mortgage Rates</h1>
+          <p class="subtitle">Multi-source rates · driver indicators · daily news digest</p>
+        </div>
+      </div>
+      <div class="topbar-meta">
+        <span id="last-updated" class="badge">Loading…</span>
+        <span id="stale-badge" class="badge badge-warn" hidden>Data may be stale</span>
+        <a class="ghlink" href="https://github.com/" target="_blank" rel="noopener">Source on GitHub ↗</a>
+      </div>
+    </div>
+  </header>
+
+  <main class="container">
+
+    <!-- ─── Pill toggle ─────────────────────────────────────── -->
+    <section class="panel" aria-labelledby="range-heading">
+      <div class="panel-head">
+        <h2 id="range-heading">Time range</h2>
+        <p class="muted">Filters the chart and trend sparklines below.</p>
+      </div>
+      <div class="pill-group" role="tablist" aria-label="Time range">
+        <button class="pill" role="tab" data-range="1D" aria-selected="false">1D</button>
+        <button class="pill" role="tab" data-range="1W" aria-selected="false">1W</button>
+        <button class="pill" role="tab" data-range="1M" aria-selected="false">1M</button>
+        <button class="pill" role="tab" data-range="3M" aria-selected="true">3M</button>
+        <button class="pill" role="tab" data-range="6M" aria-selected="false">6M</button>
+        <button class="pill" role="tab" data-range="1Y" aria-selected="false">1Y</button>
+        <button class="pill" role="tab" data-range="3Y" aria-selected="false">3Y</button>
+        <button class="pill" role="tab" data-range="5Y" aria-selected="false">5Y</button>
+      </div>
+    </section>
+
+    <!-- ─── Advanced financial chart ────────────────────────── -->
+    <section class="panel" aria-labelledby="chart-heading">
+      <div class="panel-head">
+        <div>
+          <h2 id="chart-heading">Rate trend</h2>
+          <p class="muted">Crosshair to inspect any date. Click a series in the legend to toggle.</p>
+        </div>
+        <div class="chart-tools">
+          <label class="switch">
+            <input type="checkbox" id="area-toggle" />
+            <span>Area fill</span>
+          </label>
+          <label class="switch">
+            <input type="checkbox" id="log-toggle" />
+            <span>Log scale</span>
+          </label>
+          <button class="ghost" id="chart-reset" type="button">Reset zoom</button>
+        </div>
+      </div>
+      <div id="chart-legend" class="chart-legend" role="group" aria-label="Chart series"></div>
+      <div id="chart" class="chart-canvas" role="img" aria-label="Interactive mortgage rate chart"></div>
+      <p id="chart-hover" class="chart-hover muted" aria-live="polite"></p>
+    </section>
+
+    <!-- ─── Main rate table ─────────────────────────────────── -->
+    <section class="panel" id="rate-table" aria-labelledby="rate-table-heading">
+      <div class="panel-head">
+        <h2 id="rate-table-heading">Today's mortgage rates by source</h2>
+        <p class="muted">Each column is an independent survey or daily index. Trend reflects the selected range.</p>
+      </div>
+      <div class="table-wrap">
+        <table class="rates-table">
+          <thead>
+            <tr>
+              <th scope="col">Product</th>
+              <th scope="col" id="src-h-1">Freddie Mac PMMS</th>
+              <th scope="col" id="src-h-2">Optimal Blue OBMMI</th>
+              <th scope="col" id="src-h-3">Mortgage News Daily</th>
+              <th scope="col" id="src-h-4">Bankrate</th>
+              <th scope="col">Trend</th>
+            </tr>
+          </thead>
+          <tbody id="rate-table-body">
+            <tr><td colspan="6" class="loading">Loading rates…</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- ─── Top 5 driver rates ──────────────────────────────── -->
+    <section class="panel" aria-labelledby="driver-heading">
+      <div class="panel-head">
+        <h2 id="driver-heading">Top 5 rates that influence mortgages</h2>
+        <p class="muted">These benchmarks set the cost of mortgage capital. Move first, mortgages follow.</p>
+      </div>
+      <div class="table-wrap">
+        <table class="sub-table">
+          <thead>
+            <tr>
+              <th scope="col">Indicator</th>
+              <th scope="col">Latest</th>
+              <th scope="col">Δ 1D</th>
+              <th scope="col">Trend</th>
+              <th scope="col">Why it matters</th>
+            </tr>
+          </thead>
+          <tbody id="driver-body">
+            <tr><td colspan="5" class="loading">Loading driver rates…</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- ─── Daily digest signup ─────────────────────────────── -->
+    <section class="panel panel-accent" aria-labelledby="alert-heading">
+      <div class="panel-head">
+        <h2 id="alert-heading">Daily digest alert</h2>
+        <p class="muted">Get a once-a-day summary of rates, driver moves, and headlines.</p>
+      </div>
+      <form id="alert-form" class="alert-form" novalidate>
+        <div class="field">
+          <label for="alert-email">Email</label>
+          <input id="alert-email" name="email" type="email" autocomplete="email" placeholder="you@example.com" />
+        </div>
+        <div class="field">
+          <label for="alert-phone">Phone (SMS)</label>
+          <input id="alert-phone" name="phone" type="tel" autocomplete="tel" placeholder="+1 555 555 5555" />
+        </div>
+        <div class="field field-pref">
+          <fieldset>
+            <legend>Send when</legend>
+            <label><input type="checkbox" name="trigger" value="daily" checked /> Daily 7am ET</label>
+            <label><input type="checkbox" name="trigger" value="bigmove" /> Big move (&gt; 0.10%)</label>
+          </fieldset>
+        </div>
+        <input type="text" name="_gotcha" tabindex="-1" autocomplete="off" class="honeypot" aria-hidden="true" />
+        <button type="submit" class="primary">Subscribe</button>
+        <p id="alert-status" class="alert-status" role="status" aria-live="polite"></p>
+      </form>
+    </section>
+
+    <!-- ─── 7 related macro indicators ──────────────────────── -->
+    <section class="panel" aria-labelledby="related-heading">
+      <div class="panel-head">
+        <h2 id="related-heading">7 related economic indicators</h2>
+        <p class="muted">Broader market context. Each row explains the channel to mortgage rates.</p>
+      </div>
+      <div class="table-wrap">
+        <table class="sub-table">
+          <thead>
+            <tr>
+              <th scope="col">Indicator</th>
+              <th scope="col">Latest</th>
+              <th scope="col">Δ</th>
+              <th scope="col">Trend</th>
+              <th scope="col">What it means for mortgages</th>
+            </tr>
+          </thead>
+          <tbody id="related-body">
+            <tr><td colspan="5" class="loading">Loading indicators…</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- ─── 5 key market indicators ─────────────────────────── -->
+    <section class="panel" aria-labelledby="key-heading">
+      <div class="panel-head">
+        <h2 id="key-heading">5 key market indicators</h2>
+        <p class="muted">Top-of-mind signals every rate watcher tracks.</p>
+      </div>
+      <div id="key-grid" class="card-grid">
+        <p class="loading">Loading key indicators…</p>
+      </div>
+    </section>
+
+    <!-- ─── News feed ───────────────────────────────────────── -->
+    <section class="panel" aria-labelledby="news-heading">
+      <div class="panel-head">
+        <h2 id="news-heading">Top 10 news articles</h2>
+        <p class="muted">Daily roll-up from financial RSS feeds. Older than 10 days drops off.</p>
+      </div>
+      <nav id="news-pager" class="news-pager" aria-label="News date">
+        <button class="pager-btn" data-step="-1" aria-label="Previous day">‹</button>
+        <span id="news-day-label">—</span>
+        <button class="pager-btn" data-step="1" aria-label="Next day">›</button>
+      </nav>
+      <ul id="news-list" class="news-list">
+        <li class="loading">Loading news…</li>
+      </ul>
+    </section>
+
+  </main>
+
+  <footer class="footer">
+    <p>Data: <a href="https://fred.stlouisfed.org/" rel="noopener" target="_blank">FRED · St. Louis Fed</a> · Freddie Mac PMMS · Optimal Blue · Mortgage News Daily · Bankrate. Refreshed daily via GitHub Actions.</p>
+    <p class="muted">Not financial advice. Rates shown are surveys/averages and do not reflect lender-specific quotes.</p>
+  </footer>
+</body>
+</html>
