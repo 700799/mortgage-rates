@@ -321,10 +321,68 @@ tbody tr:hover { background: color-mix(in srgb, var(--accent) 5%, transparent); 
   color: var(--muted); font-size: .82rem; display: grid; gap: .35rem;
 }
 
+/* ─── Monetization: ads, offers, consent, legal ──────────────── */
+.ad-slot { text-align: center; min-height: 0; }
+.ad-slot[data-filled] {
+  margin: .25rem 0; padding-top: 1rem;
+  border-top: 1px solid var(--border-2);
+}
+.ad-slot[data-filled]::before {
+  content: "Advertisement"; display: block;
+  font-size: .66rem; letter-spacing: .08em; text-transform: uppercase;
+  color: var(--muted); margin-bottom: .4rem;
+}
+
+.offers-buttons { display: flex; flex-wrap: wrap; gap: .6rem; margin-bottom: .9rem; }
+.offer-btn {
+  display: inline-flex; align-items: center; gap: .4rem;
+  background: var(--accent); color: #fff;
+  padding: .65rem 1.1rem; border-radius: var(--radius-sm);
+  font: 600 .9rem var(--sans); text-decoration: none;
+  transition: background .15s, transform .05s;
+}
+.offer-btn:hover { background: var(--accent-2); text-decoration: none; }
+.offer-btn:active { transform: translateY(1px); }
+
+.cta-link {
+  display: inline-block; white-space: nowrap;
+  background: var(--accent-soft); color: var(--accent-2);
+  border: 1px solid color-mix(in srgb, var(--accent) 25%, transparent);
+  padding: .4rem .75rem; border-radius: 999px;
+  font: 600 .8rem var(--sans); text-decoration: none;
+  transition: background .15s, color .15s;
+}
+.cta-link:hover { background: var(--accent); color: #fff; text-decoration: none; }
+
+.disclosure { color: var(--muted); font-size: .76rem; line-height: 1.45; }
+
+.consent-banner {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 50;
+  display: flex; align-items: center; justify-content: center;
+  flex-wrap: wrap; gap: .75rem 1.25rem; padding: .9rem 1.25rem;
+  background: var(--panel); border-top: 1px solid var(--border);
+  box-shadow: 0 -4px 14px rgba(15,23,42,.08);
+}
+.consent-text { font-size: .85rem; color: var(--ink-2); max-width: 60ch; }
+.consent-actions { display: flex; gap: .5rem; }
+.consent-actions .primary { height: auto; padding: .5rem 1rem; }
+
+.footer-links { display: flex; gap: 1rem; flex-wrap: wrap; margin-top: .25rem; }
+.footer-links a { color: var(--muted); }
+
+/* ─── Legal / privacy page ───────────────────────────────────── */
+.legal h2 { margin-top: 1.6rem; font-size: 1rem; }
+.legal p, .legal li { color: var(--ink-2); font-size: .92rem; margin-bottom: .6rem; }
+.legal ul { padding-left: 1.2rem; margin: 0; }
+
 /* ─── Responsive ─────────────────────────────────────────────── */
 @media (max-width: 720px) {
   .chart-canvas { height: 320px; }
   .panel { padding: 1rem; }
   .topbar-inner { padding: .75rem 1rem; }
   h1 { font-size: 1.15rem; }
+  .offers-buttons { flex-direction: column; align-items: stretch; }
+  .offer-btn { justify-content: center; }
+  .consent-banner { flex-direction: column; align-items: stretch; text-align: center; }
+  .consent-actions { justify-content: center; }
 }

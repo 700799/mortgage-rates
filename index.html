@@ -6,6 +6,12 @@
   <meta name="description" content="Daily U.S. mortgage rates with multi-source comparison, driver-rate breakdown, macro indicators, and news." />
   <title>Daily Mortgage Rates · Dashboard</title>
 
+  <meta property="og:type" content="website" />
+  <meta property="og:site_name" content="Daily Mortgage Rates" />
+  <meta property="og:title" content="Daily Mortgage Rates · Dashboard" />
+  <meta property="og:description" content="Daily U.S. mortgage rates with multi-source comparison, driver-rate breakdown, macro indicators, and news." />
+  <meta name="twitter:card" content="summary_large_image" />
+
   <link rel="preconnect" href="https://unpkg.com" crossorigin />
   <link rel="stylesheet" href="./assets/styles.css" />
 
@@ -34,6 +40,8 @@
   </header>
 
   <main class="container">
+
+    <div class="ad-slot" data-slot="leaderboard" aria-hidden="true"></div>
 
     <!-- ─── Pill toggle ─────────────────────────────────────── -->
     <section class="panel" aria-labelledby="range-heading">
@@ -93,6 +101,7 @@
               <th scope="col" id="src-h-3">Mortgage News Daily</th>
               <th scope="col" id="src-h-4">Bankrate</th>
               <th scope="col">Trend</th>
+              <th scope="col" id="cta-h" hidden>Get a quote</th>
             </tr>
           </thead>
           <tbody id="rate-table-body">
@@ -100,6 +109,18 @@
           </tbody>
         </table>
       </div>
+    </section>
+
+    <!-- ─── Compare offers (affiliate) ──────────────────────── -->
+    <section class="panel offers-module" id="offers" aria-labelledby="offers-heading" hidden>
+      <div class="panel-head">
+        <div>
+          <h2 id="offers-heading">Compare today's offers</h2>
+          <p class="muted">Get personalized quotes from our lending partners in minutes.</p>
+        </div>
+      </div>
+      <div id="offers-buttons" class="offers-buttons"></div>
+      <p class="disclosure">Advertising disclosure: we may earn a commission when you request a quote or close a loan through these partners. It never affects the rate you're offered.</p>
     </section>
 
     <!-- ─── Top 5 driver rates ──────────────────────────────── -->
@@ -125,6 +146,8 @@
         </table>
       </div>
     </section>
+
+    <div class="ad-slot" data-slot="inContent" aria-hidden="true"></div>
 
     <!-- ─── Daily digest signup ─────────────────────────────── -->
     <section class="panel panel-accent" aria-labelledby="alert-heading">
@@ -205,11 +228,18 @@
       </ul>
     </section>
 
+    <div class="ad-slot" data-slot="footer" aria-hidden="true"></div>
+
   </main>
 
   <footer class="footer">
     <p>Data: <a href="https://fred.stlouisfed.org/" rel="noopener" target="_blank">FRED · St. Louis Fed</a> · Freddie Mac PMMS · Optimal Blue · Mortgage News Daily · Bankrate. Refreshed daily via GitHub Actions.</p>
     <p class="muted">Not financial advice. Rates shown are surveys/averages and do not reflect lender-specific quotes.</p>
+    <p class="muted">Advertising disclosure: this site displays ads and may earn affiliate commissions from lending partners at no cost to you.</p>
+    <nav class="footer-links" aria-label="Legal">
+      <a href="./privacy.html">Privacy Policy</a>
+      <a href="./privacy.html#advertising">Advertising &amp; Affiliate Disclosure</a>
+    </nav>
   </footer>
 </body>
 </html>

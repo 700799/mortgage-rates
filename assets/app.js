@@ -35,6 +35,7 @@ init().catch(err => {
 
 async function init() {
   applyHashRange();
+  applySeoMeta();
 
   const [series, news, meta] = await Promise.all([
     fetchJSON('./data/series.json'),
@@ -52,6 +53,7 @@ async function init() {
 
   renderHeader();
   renderRateTable();
+  renderOffers();
   renderDriverRates();
   renderRelatedIndicators();
   renderKeyIndicators();
@@ -65,6 +67,7 @@ async function init() {
   wireChartControls();
   wireNewsPager();
   wireForm();
+  initConsent();
   window.addEventListener('hashchange', () => { applyHashRange(); refreshRangeUI(); });
 }
 
@@ -107,8 +110,13 @@ function renderRateTable() {
     if (th) th.textContent = col.label;
   });
 
+  const links = affiliateLinks();
+  const ctaHeader = document.getElementById('cta-h');
+  if (ctaHeader) ctaHeader.hidden = !links.length;
+
   const tbody = document.getElementById('rate-table-body');
   tbody.innerHTML = '';
+  let rowIdx = 0;
   for (const product of state.rateTable.products) {
     const tr = document.createElement('tr');
     tr.appendChild(cell(`
@@ -125,7 +133,9 @@ function renderRateTable() {
     td.innerHTML = sparklineSVG(state.series[product.trend_series], state.range);
     td.dataset.sparkSeries = product.trend_series;
     tr.appendChild(td);
+    if (links.length) tr.appendChild(ctaCell(links[rowIdx % links.length]));
     tbody.appendChild(tr);
+    rowIdx++;
   }
 }
 
@@ -476,6 +486,157 @@ function wireForm() {
       btn.disabled = false;
     }
   });
+}
+
+// ─── Monetization (config, offers, ads, analytics, consent) ────────
+function cfg() { return window.SITE_CONFIG || {}; }
+
+// A value is "not yet configured" if it's empty or still a shipped placeholder.
+function isPlaceholder(s) {
+  if (!s) return true;
+  const str = String(s);
+  return /X{3,}|x{6,}|0{6,}/.test(str) || str.includes('example.com') || str.includes('...');
+}
+
+function affiliateLinks() {
+  return (cfg().affiliates || []).filter(a => a && a.url && !isPlaceholder(a.url));
+}
+
+function ctaCell(a) {
+  const td = document.createElement('td');
+  const btn = document.createElement('a');
+  btn.className = 'cta-link';
+  btn.href = a.url;
+  btn.target = '_blank';
+  btn.rel = 'sponsored noopener';
+  btn.textContent = a.cta || 'Get quote';
+  btn.addEventListener('click', () => trackEvent('affiliate_click', { partner: a.name, placement: 'rate_table' }));
+  td.appendChild(btn);
+  return td;
+}
+
+function renderOffers() {
+  const section = document.getElementById('offers');
+  if (!section) return;
+  const links = affiliateLinks();
+  if (!links.length) { section.hidden = true; return; }
+  const wrap = document.getElementById('offers-buttons');
+  wrap.innerHTML = '';
+  for (const a of links) {
+    const link = document.createElement('a');
+    link.className = 'offer-btn';
+    link.href = a.url;
+    link.target = '_blank';
+    link.rel = 'sponsored noopener';
+    link.textContent = `${a.name} · ${a.cta || 'Get quote'}`;
+    link.addEventListener('click', () => trackEvent('affiliate_click', { partner: a.name, placement: 'offers_module' }));
+    wrap.appendChild(link);
+  }
+  section.hidden = false;
+}
+
+// Cookie consent gates ad + analytics scripts (required for personalized ads
+// in the EEA/UK and for analytics consent). Choice persists in localStorage.
+const CONSENT_KEY = 'cookie-consent';
+function consentGranted() { return localStorage.getItem(CONSENT_KEY) === 'granted'; }
+
+// Only ads + analytics set cookies; affiliate links don't. No point asking for
+// consent until at least one of those is actually configured.
+function trackingConfigured() {
+  const ad = cfg().adsense || {};
+  const ga = cfg().ga4 || {};
+  return (ad.enabled && !isPlaceholder(ad.client)) || !isPlaceholder(ga.measurementId);
+}
+
+function initConsent() {
+  if (!trackingConfigured()) return;
+  const choice = localStorage.getItem(CONSENT_KEY);
+  if (choice === 'granted') { initAds(); initGA4(); return; }
+  if (choice === 'denied') return;
+  showConsentBanner();
+}
+
+function showConsentBanner() {
+  if (document.querySelector('.consent-banner')) return;
+  const banner = document.createElement('div');
+  banner.className = 'consent-banner';
+  banner.setAttribute('role', 'dialog');
+  banner.setAttribute('aria-label', 'Cookie consent');
+  banner.innerHTML = `
+    <p class="consent-text">We use cookies for analytics and to show relevant ads. See our <a href="./privacy.html">Privacy Policy</a>.</p>
+    <div class="consent-actions">
+      <button type="button" class="ghost" data-consent="denied">Decline</button>
+      <button type="button" class="primary" data-consent="granted">Accept</button>
+    </div>`;
+  banner.querySelectorAll('[data-consent]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      localStorage.setItem(CONSENT_KEY, btn.dataset.consent);
+      banner.remove();
+      if (btn.dataset.consent === 'granted') { initAds(); initGA4(); }
+    });
+  });
+  document.body.appendChild(banner);
+}
+
+let adsLoaded = false;
+function initAds() {
+  const ad = cfg().adsense || {};
+  if (!ad.enabled || isPlaceholder(ad.client) || !consentGranted()) return;
+  if (!adsLoaded) {
+    const s = document.createElement('script');
+    s.async = true;
+    s.crossOrigin = 'anonymous';
+    s.src = `https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=${encodeURIComponent(ad.client)}`;
+    document.head.appendChild(s);
+    adsLoaded = true;
+  }
+  const slots = ad.slots || {};
+  document.querySelectorAll('.ad-slot').forEach(slot => {
+    if (slot.dataset.filled) return;
+    const slotId = slots[slot.dataset.slot];
+    if (isPlaceholder(slotId)) return;
+    const ins = document.createElement('ins');
+    ins.className = 'adsbygoogle';
+    ins.style.display = 'block';
+    ins.setAttribute('data-ad-client', ad.client);
+    ins.setAttribute('data-ad-slot', slotId);
+    ins.setAttribute('data-ad-format', 'auto');
+    ins.setAttribute('data-full-width-responsive', 'true');
+    slot.appendChild(ins);
+    slot.dataset.filled = 'true';
+    (window.adsbygoogle = window.adsbygoogle || []).push({});
+  });
+}
+
+let ga4Loaded = false;
+function initGA4() {
+  const id = (cfg().ga4 || {}).measurementId;
+  if (isPlaceholder(id) || !consentGranted() || ga4Loaded) return;
+  ga4Loaded = true;
+  const s = document.createElement('script');
+  s.async = true;
+  s.src = `https://www.googletagmanager.com/gtag/js?id=${encodeURIComponent(id)}`;
+  document.head.appendChild(s);
+  window.dataLayer = window.dataLayer || [];
+  window.gtag = function () { window.dataLayer.push(arguments); };
+  window.gtag('js', new Date());
+  window.gtag('config', id);
+}
+
+function trackEvent(name, params) {
+  if (typeof window.gtag === 'function') window.gtag('event', name, params || {});
+}
+
+function applySeoMeta() {
+  const domain = cfg().domain;
+  if (isPlaceholder(domain)) return;
+  const base = String(domain).replace(/\/+$/, '');
+  let link = document.querySelector('link[rel="canonical"]');
+  if (!link) { link = document.createElement('link'); link.rel = 'canonical'; document.head.appendChild(link); }
+  link.href = base + '/';
+  let og = document.querySelector('meta[property="og:url"]');
+  if (!og) { og = document.createElement('meta'); og.setAttribute('property', 'og:url'); document.head.appendChild(og); }
+  og.setAttribute('content', base + '/');
 }
 
 // ─── Helpers ───────────────────────────────────────────────────────

@@ -1,0 +1,5 @@
+User-agent: *
+Allow: /
+
+# Update the domain below once your custom domain is live.
+Sitemap: https://www.example.com/sitemap.xml
