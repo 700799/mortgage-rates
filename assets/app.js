@@ -256,10 +256,13 @@ function initChart() {
     grid: { vertLines: { color: gridColor }, horzLines: { color: gridColor } },
     crosshair: { mode: LightweightCharts.CrosshairMode.Normal, vertLine: { width: 1, style: 0 }, horzLine: { width: 1, style: 0 } },
     rightPriceScale: { borderVisible: false, scaleMargins: { top: 0.1, bottom: 0.15 } },
+    leftPriceScale: { borderVisible: false, scaleMargins: { top: 0.1, bottom: 0.15 }, visible: true },
     timeScale: { borderVisible: false, timeVisible: false, secondsVisible: false, rightOffset: 4 },
     handleScroll: true,
     handleScale: true,
   });
+
+  state.leftPriceScale = state.chart.priceScale('left');
 
   // Curated default chart: 30-yr fixed, 15-yr fixed, 10-yr Treasury.
   // Anything else can be added via the rate table → trend column or legend.
@@ -288,6 +291,7 @@ function addChartSeries(id, color, legendEl) {
     ? state.chart.addAreaSeries({ ...opts, topColor: color + '55', bottomColor: color + '00', lineColor: color })
     : state.chart.addLineSeries(opts);
   api.setData(observationsToLW(series.observations));
+  if (id === 'DGS10' && state.leftPriceScale) api.attachToScale(state.leftPriceScale);
   state.chartSeries.set(id, { api, color, active: true, series });
 
   const chip = document.createElement('button');
@@ -391,11 +395,16 @@ function sparklineSVG(series, range) {
   const up = vals[vals.length - 1] >= vals[0];
   const color = up ? 'var(--up)' : 'var(--down)';
 
+  const firstVal = vals[0].toFixed(2);
+  const lastVal = vals[vals.length - 1].toFixed(2);
+
   return `
-    <svg class="spark" viewBox="0 0 ${w} ${h}" aria-hidden="true">
+    <svg class="spark" viewBox="0 0 ${w} ${h}" aria-hidden="true" title="${firstVal} → ${lastVal}">
       <polygon class="fill" points="${fillPts}" style="fill:color-mix(in srgb, ${color} 15%, transparent)"></polygon>
       <polyline class="line" points="${linePts}" style="fill:none;stroke:${color};stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round"></polyline>
       <circle class="dot" cx="${xs[xs.length - 1].toFixed(2)}" cy="${ys[ys.length - 1].toFixed(2)}" r="2" style="fill:${color}"></circle>
+      <text x="2" y="10" font-size="8" fill="currentColor" opacity="0.6">${firstVal}</text>
+      <text x="${(w - 14).toFixed(0)}" y="10" font-size="8" fill="currentColor" opacity="0.6">${lastVal}</text>
     </svg>
   `;
 }
@@ -423,6 +432,8 @@ function refreshRangeUI() {
   document.querySelectorAll('.pill').forEach(btn => {
     btn.setAttribute('aria-selected', String(btn.dataset.range === state.range));
   });
+  const rangeLabel = document.getElementById('range-caption');
+  if (rangeLabel) rangeLabel.textContent = `Sparklines & chart show the last ${state.range}`;
   refreshSparklines();
   applyRangeToChart();
 }
