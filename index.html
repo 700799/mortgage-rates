@@ -125,6 +125,24 @@
       <p class="disclosure">Advertising disclosure: we may earn a commission when you request a quote or close a loan through these partners. It never affects the rate you're offered.</p>
     </section>
 
+    <!-- ─── 5 actions for borrowers ─────────────────────────── -->
+    <section class="panel" aria-labelledby="actions-heading">
+      <div class="panel-head">
+        <div>
+          <h2 id="actions-heading">5 actions to take today or this month</h2>
+          <p class="muted">Concrete, time-keyed steps for borrowers and homebuyers.</p>
+        </div>
+      </div>
+      <div class="actions-bucket">
+        <h3 class="bucket-label">Today</h3>
+        <div id="actions-today" class="card-grid"></div>
+      </div>
+      <div class="actions-bucket">
+        <h3 class="bucket-label">This month</h3>
+        <div id="actions-month" class="card-grid"></div>
+      </div>
+    </section>
+
     <!-- ─── Top 5 driver rates ──────────────────────────────── -->
     <section class="panel" aria-labelledby="driver-heading">
       <div class="panel-head">
@@ -212,6 +230,42 @@
       <div id="key-grid" class="card-grid">
         <p class="loading">Loading key indicators…</p>
       </div>
+    </section>
+
+    <!-- ─── Pay off early vs S&P 500 calculator ─────────────── -->
+    <section class="panel" aria-labelledby="payoff-heading">
+      <div class="panel-head">
+        <div>
+          <h2 id="payoff-heading">Pay off early or invest in the S&amp;P 500?</h2>
+          <p class="muted">Same monthly outlay, two strategies. Drag the sliders to see the trade-off in real time.</p>
+        </div>
+      </div>
+      <div class="calc-controls">
+        <div class="field">
+          <label for="calc-balance">Mortgage balance ($)</label>
+          <input id="calc-balance" type="number" min="0" step="5000" value="400000" />
+        </div>
+        <div class="field">
+          <label for="calc-rate">Rate (%)</label>
+          <input id="calc-rate" type="number" min="0" step="0.05" value="7" />
+        </div>
+        <div class="field">
+          <label for="calc-years">Years remaining</label>
+          <input id="calc-years" type="number" min="1" max="40" step="1" value="30" />
+        </div>
+        <div class="field">
+          <label for="calc-extra">Extra / month: <output id="calc-extra-out">$500</output></label>
+          <input id="calc-extra" type="range" min="0" max="5000" step="50" value="500" />
+        </div>
+        <div class="field">
+          <label for="calc-return">Expected S&amp;P return: <output id="calc-return-out">8.0%</output></label>
+          <input id="calc-return" type="range" min="3" max="12" step="0.5" value="8" />
+        </div>
+      </div>
+      <div id="payoff-chart" class="chart-canvas" role="img" aria-label="Net wealth comparison chart"></div>
+      <p id="payoff-summary" class="payoff-summary" aria-live="polite"></p>
+      <p class="payoff-footnote">Pre-tax. Assumes a constant S&amp;P return — actual returns vary year to year. Not financial advice.</p>
+      <p class="calc-reset-wrap"><button type="button" class="ghost" id="calc-reset">Reset to defaults</button></p>
     </section>
 
     <!-- ─── News feed ───────────────────────────────────────── -->
