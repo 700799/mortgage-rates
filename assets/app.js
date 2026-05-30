@@ -54,6 +54,7 @@ async function init() {
   renderHeader();
   renderRateTable();
   renderOffers();
+  renderActions();
   renderDriverRates();
   renderRelatedIndicators();
   renderKeyIndicators();
@@ -61,6 +62,7 @@ async function init() {
 
   await waitForGlobal('LightweightCharts', 3000);
   initChart();
+  renderPayoffCalc();
   refreshSparklines();
 
   wirePills();
@@ -648,6 +650,186 @@ function applySeoMeta() {
   let og = document.querySelector('meta[property="og:url"]');
   if (!og) { og = document.createElement('meta'); og.setAttribute('property', 'og:url'); document.head.appendChild(og); }
   og.setAttribute('content', base + '/');
+}
+
+// ─── Borrower action cards ─────────────────────────────────────────
+const BORROWER_ACTIONS = [
+  { bucket: 'today',
+    title: "Lock if you're already shopping",
+    body: "If your locked quote is below today's national PMMS average, secure it. Rates can move 0.10%+ in a single day." },
+  { bucket: 'today',
+    title: "Compare at least three lenders",
+    body: "The CFPB found borrowers who get three or more quotes save around $3,000 over the life of the loan.",
+    cta: true },
+  { bucket: 'month',
+    title: "Run a refi sanity-check if you're at 7%+",
+    body: "If your current rate is ≥0.75% above today's, a refi typically breaks even within ~24 months. Worth a 10-minute estimate.",
+    cta: true },
+  { bucket: 'month',
+    title: "Track the next Fed meeting",
+    body: "Mortgage rates respond fast to Fed signals. Mark the next FOMC date and watch the dot plot for direction." },
+  { bucket: 'month',
+    title: "Build a closing-cost buffer",
+    body: "Even at 20% down, expect 2–5% of the purchase price in closing costs. Funnel cash to a high-yield account if you're 30–90 days out." },
+];
+
+function renderActions() {
+  const today = document.getElementById('actions-today');
+  const month = document.getElementById('actions-month');
+  if (!today || !month) return;
+  today.innerHTML = '';
+  month.innerHTML = '';
+  const aff = affiliateLinks()[0];
+  for (const a of BORROWER_ACTIONS) {
+    const card = document.createElement('div');
+    card.className = 'card';
+    const cta = a.cta && aff
+      ? `<div class="card-action"><a class="cta-link" href="${escapeAttr(aff.url)}" target="_blank" rel="sponsored noopener" data-action-title="${escapeAttr(a.title)}">${escapeHtml(aff.cta || 'Get quote')}</a></div>`
+      : '';
+    card.innerHTML = `
+      <div class="card-head"><span class="card-title">${escapeHtml(a.title)}</span></div>
+      <span class="card-explain">${escapeHtml(a.body)}</span>
+      ${cta}
+    `;
+    (a.bucket === 'today' ? today : month).appendChild(card);
+  }
+  document.querySelectorAll('[data-action-title]').forEach(el => {
+    el.addEventListener('click', () => trackEvent('action_cta_click', { action: el.dataset.actionTitle, placement: 'actions_cards' }));
+  });
+}
+
+// ─── Pay-off-early vs S&P 500 calculator ───────────────────────────
+// Apples-to-apples: same monthly outlay (P + extra) and same horizon N for
+// both strategies, so the comparison reduces to "where does the cash sit?"
+function simulatePayoff({ balance, ratePct, years, extra, returnPct }) {
+  const N = Math.max(1, Math.round(years * 12));
+  const rm = ratePct / 100 / 12;
+  const sm = returnPct / 100 / 12;
+  const P = rm > 0
+    ? balance * (rm * Math.pow(1 + rm, N)) / (Math.pow(1 + rm, N) - 1)
+    : balance / N;
+
+  let mortA = balance, invA = 0;   // A: prepay, then invest after payoff
+  let mortB = balance, invB = 0;   // B: pay base, invest extra throughout
+  const prepay = [], invest = [];
+  for (let m = 1; m <= N; m++) {
+    if (mortA > 0) {
+      const interest = mortA * rm;
+      const principal = Math.min(mortA, (P + extra) - interest);
+      mortA = Math.max(0, mortA - principal);
+    } else {
+      invA = invA * (1 + sm) + (P + extra);
+    }
+    if (mortB > 0) {
+      const interest = mortB * rm;
+      const principal = Math.min(mortB, P - interest);
+      mortB = Math.max(0, mortB - principal);
+    }
+    invB = invB * (1 + sm) + extra;
+    if (m % 12 === 0) {
+      prepay.push({ year: m / 12, net: invA - mortA });
+      invest.push({ year: m / 12, net: invB - mortB });
+    }
+  }
+  return { prepay, invest, monthlyPayment: P };
+}
+
+let payoffChart = null, payoffSeriesA = null, payoffSeriesB = null;
+let payoffEventTimer = null;
+
+function renderPayoffCalc() {
+  const host = document.getElementById('payoff-chart');
+  if (!host || typeof LightweightCharts === 'undefined') return;
+
+  // Default the rate to the latest non-null 30-yr fixed observation if present.
+  const obs = (state.series.OBMMIC30YF || {}).observations || [];
+  let latestRate = null;
+  for (let i = obs.length - 1; i >= 0; i--) {
+    if (obs[i].value != null) { latestRate = obs[i].value; break; }
+  }
+  if (latestRate != null) {
+    const el = document.getElementById('calc-rate');
+    if (el) el.value = Number(latestRate).toFixed(2);
+  }
+
+  const css = getComputedStyle(document.documentElement);
+  const textColor = css.getPropertyValue('--ink-2').trim() || '#4a5568';
+  const gridColor = css.getPropertyValue('--border-2').trim() || '#eef0f6';
+  const accent    = css.getPropertyValue('--accent').trim()  || '#2c6cf6';
+  const downColor = css.getPropertyValue('--down').trim()    || '#1a9d57';
+
+  payoffChart = LightweightCharts.createChart(host, {
+    autoSize: true,
+    layout: { background: { type: 'solid', color: 'transparent' }, textColor, fontFamily: 'inherit' },
+    grid: { vertLines: { color: gridColor }, horzLines: { color: gridColor } },
+    crosshair: { mode: LightweightCharts.CrosshairMode.Normal, vertLine: { width: 1, style: 0 }, horzLine: { width: 1, style: 0 } },
+    rightPriceScale: { borderVisible: false, scaleMargins: { top: 0.1, bottom: 0.1 } },
+    timeScale: { borderVisible: false, timeVisible: false, secondsVisible: false, rightOffset: 4 },
+  });
+  payoffSeriesA = payoffChart.addLineSeries({ color: accent,    lineWidth: 2, title: 'Prepay net wealth' });
+  payoffSeriesB = payoffChart.addLineSeries({ color: downColor, lineWidth: 2, title: 'Invest net wealth' });
+
+  ['calc-balance', 'calc-rate', 'calc-years', 'calc-extra', 'calc-return'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.addEventListener('input', recomputePayoff);
+  });
+  const resetBtn = document.getElementById('calc-reset');
+  if (resetBtn) resetBtn.addEventListener('click', () => {
+    document.getElementById('calc-balance').value = 400000;
+    document.getElementById('calc-rate').value    = latestRate != null ? Number(latestRate).toFixed(2) : 7;
+    document.getElementById('calc-years').value   = 30;
+    document.getElementById('calc-extra').value   = 500;
+    document.getElementById('calc-return').value  = 8;
+    recomputePayoff();
+  });
+
+  recomputePayoff();
+}
+
+function recomputePayoff() {
+  const balance   = Number(document.getElementById('calc-balance').value) || 0;
+  const ratePct   = Number(document.getElementById('calc-rate').value)    || 0;
+  const years     = Number(document.getElementById('calc-years').value)   || 30;
+  const extra     = Number(document.getElementById('calc-extra').value)   || 0;
+  const returnPct = Number(document.getElementById('calc-return').value)  || 0;
+
+  document.getElementById('calc-extra-out').textContent  = fmtMoney(extra);
+  document.getElementById('calc-return-out').textContent = `${returnPct.toFixed(1)}%`;
+
+  const { prepay, invest } = simulatePayoff({ balance, ratePct, years, extra, returnPct });
+
+  const today = new Date();
+  const base = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+  const toPts = arr => arr.map(p => ({
+    time: new Date(base.getFullYear() + p.year, base.getMonth(), base.getDate()).toISOString().slice(0, 10),
+    value: p.net,
+  }));
+  payoffSeriesA.setData(toPts(prepay));
+  payoffSeriesB.setData(toPts(invest));
+  payoffChart.timeScale().fitContent();
+
+  const endA = prepay.length ? prepay[prepay.length - 1].net : 0;
+  const endB = invest.length ? invest[invest.length - 1].net : 0;
+  const diff = Math.abs(endA - endB);
+  const summary = document.getElementById('payoff-summary');
+  let label = 'tie';
+  if (endB > endA + 1)      { summary.innerHTML = `<strong>Investing wins by ${fmtMoney(diff)}</strong> over ${years} years at ${returnPct.toFixed(1)}% return vs ${ratePct.toFixed(2)}% mortgage.`; label = 'invest'; }
+  else if (endA > endB + 1) { summary.innerHTML = `<strong>Prepaying wins by ${fmtMoney(diff)}</strong> over ${years} years at ${returnPct.toFixed(1)}% return vs ${ratePct.toFixed(2)}% mortgage.`; label = 'prepay'; }
+  else                      { summary.innerHTML = `<strong>Both strategies tie</strong> over ${years} years at ${returnPct.toFixed(1)}% return vs ${ratePct.toFixed(2)}% mortgage.`; }
+
+  if (payoffEventTimer) clearTimeout(payoffEventTimer);
+  payoffEventTimer = setTimeout(() => {
+    trackEvent('payoff_calc_used', { winner: label, return_pct: returnPct, rate_pct: ratePct });
+  }, 500);
+}
+
+function fmtMoney(v) {
+  const n = Number(v) || 0;
+  const sign = n < 0 ? '-' : '';
+  const a = Math.abs(n);
+  if (a >= 1_000_000) return `${sign}$${(a / 1_000_000).toFixed(2)}M`;
+  if (a >= 1_000)     return `${sign}$${Math.round(a / 1_000).toLocaleString()}k`;
+  return `${sign}$${Math.round(a).toLocaleString()}`;
 }
 
 // ─── Helpers ───────────────────────────────────────────────────────

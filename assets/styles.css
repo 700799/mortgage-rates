@@ -375,6 +375,37 @@ tbody tr:hover { background: color-mix(in srgb, var(--accent) 5%, transparent); 
 .legal p, .legal li { color: var(--ink-2); font-size: .92rem; margin-bottom: .6rem; }
 .legal ul { padding-left: 1.2rem; margin: 0; }
 
+/* ─── Borrower action cards ──────────────────────────────────── */
+.actions-bucket + .actions-bucket { margin-top: 1.25rem; }
+.bucket-label {
+  font-size: .72rem; letter-spacing: .08em; text-transform: uppercase;
+  color: var(--muted); margin: 0 0 .6rem; font-weight: 600;
+}
+.card-action { margin-top: .35rem; }
+
+/* ─── Pay-off-vs-S&P calculator ──────────────────────────────── */
+.calc-controls {
+  display: grid; gap: .75rem 1rem;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  margin-bottom: 1rem;
+}
+.calc-controls .field { gap: .35rem; }
+.calc-controls input[type=number] {
+  font: 400 .95rem var(--sans);
+  padding: .55rem .75rem; border-radius: var(--radius-sm);
+  border: 1px solid var(--border); background: var(--panel); color: var(--ink);
+}
+.calc-controls input[type=number]:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+.calc-controls input[type=range] { width: 100%; accent-color: var(--accent); }
+.calc-controls output {
+  font: 600 .85rem var(--mono); color: var(--ink);
+  margin-left: .25rem;
+}
+.payoff-summary { margin-top: .85rem; font-size: 1rem; color: var(--ink-2); }
+.payoff-summary strong { color: var(--down); }
+.payoff-footnote { color: var(--muted); font-size: .76rem; margin-top: .25rem; }
+.calc-reset-wrap { margin-top: .75rem; }
+
 /* ─── Responsive ─────────────────────────────────────────────── */
 @media (max-width: 720px) {
   .chart-canvas { height: 320px; }
