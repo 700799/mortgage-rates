@@ -17,13 +17,17 @@
 
   <script src="https://unpkg.com/lightweight-charts@4.2.0/dist/lightweight-charts.standalone.production.js" defer></script>
   <script src="./config.js" defer></script>
+  <script src="./assets/nav.js" defer></script>
   <script src="./assets/app.js" type="module"></script>
 </head>
-<body>
+<body data-page="home">
   <a class="skip-link" href="#rate-table">Skip to rates</a>
 
   <header class="topbar">
     <div class="topbar-inner">
+      <button type="button" class="hamburger" aria-label="Open menu" aria-controls="drawer">
+        <span></span><span></span><span></span>
+      </button>
       <div class="brand">
         <span class="brand-mark" aria-hidden="true">%</span>
         <div>
@@ -34,7 +38,6 @@
       <div class="topbar-meta">
         <span id="last-updated" class="badge">Loading…</span>
         <span id="stale-badge" class="badge badge-warn" hidden>Data may be stale</span>
-        <a class="ghlink" href="https://github.com/" target="_blank" rel="noopener">Source on GitHub ↗</a>
       </div>
     </div>
   </header>
@@ -57,10 +60,9 @@
         <button class="pill" role="tab" data-range="6M" aria-selected="false">6M</button>
         <button class="pill" role="tab" data-range="1Y" aria-selected="false">1Y</button>
         <button class="pill" role="tab" data-range="3Y" aria-selected="false">3Y</button>
-      </div>
-      <p id="range-caption" class="muted" style="font-size: 0.85rem; margin-top: 0.5rem;">Sparklines &amp; chart show the last 3M</p>
         <button class="pill" role="tab" data-range="5Y" aria-selected="false">5Y</button>
       </div>
+      <p id="range-caption" class="muted" style="font-size: 0.85rem; margin-top: 0.5rem;">Sparklines &amp; chart show the last 3M</p>
     </section>
 
     <!-- ─── Advanced financial chart ────────────────────────── -->
@@ -113,6 +115,38 @@
       </div>
     </section>
 
+    <!-- ─── Top lenders by state ────────────────────────────── -->
+    <section class="panel" id="lenders" aria-labelledby="lenders-heading">
+      <div class="panel-head">
+        <div>
+          <h2 id="lenders-heading">Top lenders in your state</h2>
+          <p class="muted">Lenders licensed in your selected state, sorted by advertised 30-year rate when published. Rates default to "—" until you add them in <code>config.js</code>.</p>
+        </div>
+        <div class="state-picker-wrap">
+          <label class="state-picker-label" for="state-picker">State</label>
+          <select id="state-picker" aria-label="Select your state"></select>
+        </div>
+      </div>
+      <div class="table-wrap">
+        <table class="sub-table lenders-table">
+          <thead>
+            <tr>
+              <th scope="col">Lender</th>
+              <th scope="col">NMLS</th>
+              <th scope="col">30-Year</th>
+              <th scope="col">15-Year</th>
+              <th scope="col">Quote</th>
+            </tr>
+          </thead>
+          <tbody id="lenders-body">
+            <tr><td colspan="5" class="loading">Loading lenders…</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p id="lenders-handoff" class="lenders-handoff"></p>
+      <p class="disclosure">Lender list is curated for reference. State-licensing data is informational — verify current status on each lender's <a href="https://www.nmlsconsumeraccess.org/" target="_blank" rel="noopener">NMLS Consumer Access</a> page before applying.</p>
+    </section>
+
     <!-- ─── Compare offers (affiliate) ──────────────────────── -->
     <section class="panel offers-module" id="offers" aria-labelledby="offers-heading" hidden>
       <div class="panel-head">
@@ -141,6 +175,24 @@
         <h3 class="bucket-label">This month</h3>
         <div id="actions-month" class="card-grid"></div>
       </div>
+    </section>
+
+    <!-- ─── Lender tricks & negotiation ─────────────────────── -->
+    <section class="panel" id="tricks" aria-labelledby="tricks-heading">
+      <div class="panel-head">
+        <div>
+          <h2 id="tricks-heading">How lenders make money — and what's negotiable</h2>
+          <p class="muted">Plain-English cards. Tags show whether a line item is <strong>negotiable</strong>, a <strong>common trick</strong>, <strong>not negotiable</strong>, or part of <strong>how lenders earn</strong>.</p>
+        </div>
+        <div class="tricks-filter" role="tablist" aria-label="Filter cards by tag">
+          <button type="button" class="pill" data-tricks-filter="all" aria-selected="true">All</button>
+          <button type="button" class="pill" data-tricks-filter="trick" aria-selected="false">Tricks</button>
+          <button type="button" class="pill" data-tricks-filter="earn" aria-selected="false">How they earn</button>
+          <button type="button" class="pill" data-tricks-filter="negotiable" aria-selected="false">Negotiable</button>
+          <button type="button" class="pill" data-tricks-filter="fixed" aria-selected="false">Not negotiable</button>
+        </div>
+      </div>
+      <div id="tricks-grid" class="card-grid tricks-grid"></div>
     </section>
 
     <!-- ─── Top 5 driver rates ──────────────────────────────── -->

@@ -56,10 +56,16 @@ DRIVER_SERIES = [
      "Benchmark for 30-year fixed mortgage pricing. When the 10Y rises, mortgages follow within days."),
     ("DGS30", "30-Year Treasury Yield", "pct",
      "Long-end of the curve. Direct sentiment proxy for very long-duration debt like mortgage-backed bonds."),
+    ("DGS2",  "2-Year Treasury Yield", "pct",
+     "Front-end of the curve — most sensitive to Fed expectations. Moves first when policy outlook shifts."),
+    ("DGS5",  "5-Year Treasury Yield", "pct",
+     "Belly of the curve. Indexes some hybrid ARMs and reflects the medium-term rate path."),
     ("DFF",   "Federal Funds Rate", "pct",
      "The Fed's policy rate. Sets the floor for short-term borrowing and bleeds into mortgage pricing via expectations."),
     ("SOFR",  "SOFR (Overnight Funding)", "pct",
      "Successor to LIBOR. Indexes most new ARMs and floating-rate commercial mortgages."),
+    ("T10YIE", "10Y Breakeven Inflation", "pct",
+     "Market-implied 10-year inflation from TIPS spreads. Rising breakevens lift nominal yields and mortgage rates."),
     ("MBS_SPREAD", "MBS Current-Coupon Spread", "pct",
      "30-yr mortgage minus 10-yr Treasury. The mortgage industry's own risk premium — wider spread = costlier mortgages."),
 ]
@@ -71,14 +77,34 @@ RELATED_SERIES = [
      "Headline inflation. Hotter prints push the Fed hawkish and lift the long end of the curve."),
     ("PCEPILFE_YOY",  "Core PCE YoY", "pct",
      "The Fed's preferred inflation gauge — drives policy expectations more than CPI."),
+    ("CUUR0000SEHA_YOY", "CPI Rent YoY", "pct",
+     "Shelter inflation. The single largest CPI component — the Fed watches this closely for sticky-inflation signals."),
     ("UNRATE",        "Unemployment Rate", "pct",
      "Labor slack. Higher unemployment usually means lower mortgage rates as Treasury yields fall."),
+    ("PAYEMS_DELTA",  "Nonfarm Payrolls (Δ k)", "num",
+     "Monthly change in U.S. jobs. The headline jobs print — surprises move 10Y yields the fastest."),
+    ("ICSA",          "Initial Jobless Claims (k)", "num",
+     "Weekly read on layoffs. Rising claims often precede rate cuts as the labor market softens."),
+    ("JTSJOL",        "JOLTS Job Openings (k)", "num",
+     "Open jobs across the economy. A leading wage-and-inflation signal the Fed weights heavily."),
     ("GDPC1_YOY",     "Real GDP YoY", "pct",
      "Overall growth. Strong growth + tight labor = sticky rates."),
+    ("PSAVERT",       "Personal Saving Rate", "pct",
+     "Households' saving rate. Lower saving = stretched consumers and weakening housing demand."),
     ("HOUST",         "Housing Starts (SAAR, k)", "num",
      "Supply pipeline. Affects home prices more than rates, but feeds Fed thinking on shelter inflation."),
+    ("PERMIT",        "Building Permits (SAAR, k)", "num",
+     "Forward-looking supply signal — permits lead starts by a few months."),
+    ("HSN1F",         "New Home Sales (SAAR, k)", "num",
+     "New-construction demand. Highly rate-sensitive — buyers walk fast when financing costs rise."),
     ("EXHOSLUSM495S", "Existing Home Sales (SAAR, k)", "num",
      "Demand-side housing health — declines often precede rate cuts."),
+    ("MSACSR",        "Months Supply (New Homes)", "num",
+     "Months of new-home inventory at current pace. >6 = buyer's market, <4 = seller's."),
+    ("CSUSHPINSA_YOY","Case-Shiller Home Prices YoY", "pct",
+     "National home price growth. Higher prices = larger loan sizes and more interest-rate-sensitive monthly payments."),
+    ("DRSFRMACBS",    "Mortgage Delinquency Rate", "pct",
+     "Single-family delinquencies at all commercial banks. A late-cycle signal: rising delinquencies precede credit tightening."),
 ]
 
 KEY_INDICATORS = [
@@ -92,6 +118,16 @@ KEY_INDICATORS = [
      "University of Michigan survey. Forward-looking proxy for spending, housing demand, and inflation expectations."),
     ("M2SL",    "M2 Money Stock ($B)", "num",
      "Broad money supply. The liquidity backdrop for everything — outsized expansion fed the 2020–2022 inflation surge."),
+    ("WALCL",   "Fed Balance Sheet ($B)", "num",
+     "Total assets held by the Federal Reserve. Expansion (QE) compresses term premia and mortgage spreads; runoff (QT) widens them."),
+    ("WSHOMCB", "Fed MBS Holdings ($B)", "num",
+     "Mortgage-backed securities on the Fed's balance sheet. Direct supply/demand for MBS — drives the mortgage-Treasury spread."),
+    ("BAMLH0A0HYM2", "High-Yield Credit Spread", "pct",
+     "ICE BofA HY OAS. Wider spreads = risk-off; capital flows into Treasuries, pulling mortgage rates down with them."),
+    ("DGS3MO",  "3-Month T-Bill", "pct",
+     "Front-end policy proxy. Diverges from the funds rate when the market is pricing imminent Fed action."),
+    ("T5YIFR",  "5y5y Forward Inflation", "pct",
+     "5-year inflation expectations starting 5 years out. The Fed's favorite long-term inflation anchor — drives the rates outlook."),
 ]
 
 RATE_TABLE_SOURCE_COLUMNS = [
@@ -186,6 +222,43 @@ def spread(a: list[dict], b: list[dict]) -> list[dict]:
     return [{"date": d, "value": by_a[d] - by_b[d]} for d in common]
 
 
+def level_delta(obs: list[dict]) -> list[dict]:
+    """Period-over-period level change (e.g. PAYEMS in thousands → Δ jobs)."""
+    obs = sorted(obs, key=lambda o: o["date"])
+    return [{"date": obs[i]["date"], "value": obs[i]["value"] - obs[i - 1]["value"]}
+            for i in range(1, len(obs))]
+
+
+# Suffix-based registry of derived series → (level_id, function).
+DERIVATIONS = {
+    "_YOY":   yoy,
+    "_DELTA": level_delta,
+}
+
+
+def is_derived(sid: str) -> bool:
+    return sid.startswith("MBS_") or any(sid.endswith(suf) for suf in DERIVATIONS)
+
+
+def apply_derivations(series: dict[str, list[dict]]) -> None:
+    """Compute every derived series whose underlying level is present in `series`.
+
+    Walks the catalogue lists looking for ids that end in a known derivation
+    suffix, then runs the matching function on the level series.
+    """
+    if series.get("MORTGAGE30US") and series.get("DGS10"):
+        series["MBS_SPREAD"] = spread(series["MORTGAGE30US"], series["DGS10"])
+    catalogue_ids = set()
+    for src in (DRIVER_SERIES, RELATED_SERIES, KEY_INDICATORS):
+        catalogue_ids.update(s[0] for s in src)
+    for sid in catalogue_ids:
+        for suffix, fn in DERIVATIONS.items():
+            if sid.endswith(suffix):
+                level = sid[: -len(suffix)]
+                if series.get(level):
+                    series[sid] = fn(series[level])
+
+
 # ─── News ──────────────────────────────────────────────────────────
 def fetch_news() -> dict[str, list[dict]]:
     """Return {YYYY-MM-DD: [article, ...]} for the last NEWS_DAYS_KEEP days."""
@@ -254,6 +327,7 @@ def bootstrap_series() -> dict[str, list[dict]]:
         return out
 
     series = {
+        # Mortgage rates
         "MORTGAGE30US":   walk(3.10, 0.0040, 0.06, "weekly", lo=2.5, hi=8.5),
         "MORTGAGE15US":   walk(2.45, 0.0038, 0.05, "weekly", lo=2.0, hi=7.5),
         "MORTGAGE5US":    walk(2.75, 0.0035, 0.06, "weekly", lo=2.0, hi=7.5),
@@ -262,28 +336,60 @@ def bootstrap_series() -> dict[str, list[dict]]:
         "OBMMIJ30YF":     walk(3.05, 0.0006, 0.04, "daily",  lo=2.5, hi=8.5),
         "OBMMIFHA30YF":   walk(3.10, 0.0006, 0.04, "daily",  lo=2.5, hi=8.5),
         "OBMMIVA30YF":    walk(2.95, 0.0006, 0.04, "daily",  lo=2.4, hi=8.5),
+
+        # Treasury curve + funding
         "DGS10":          walk(1.55, 0.0006, 0.04, "daily",  lo=0.5, hi=6.0),
         "DGS30":          walk(2.10, 0.0006, 0.04, "daily",  lo=1.0, hi=6.5),
+        "DGS5":           walk(1.00, 0.0008, 0.03, "daily",  lo=0.2, hi=6.0),
         "DGS2":           walk(0.20, 0.0010, 0.03, "daily",  lo=0.05, hi=6.5),
+        "DGS3MO":         walk(0.05, 0.0011, 0.01, "daily",  lo=0.01, hi=6.0),
         "DFF":            walk(0.10, 0.0010, 0.01, "daily",  lo=0.05, hi=6.0),
         "SOFR":           walk(0.05, 0.0010, 0.01, "daily",  lo=0.01, hi=6.0),
+
+        # Inflation expectations
+        "T10YIE":         walk(2.05, 0.00005, 0.02, "daily", lo=1.0, hi=3.5),
+        "T5YIFR":         walk(2.10, 0.00003, 0.02, "daily", lo=1.5, hi=3.0),
+
+        # Equity + credit + dollar + vol
         "SP500":          walk(4180,  0.65,   30,  "daily",  lo=3200, hi=7200),
-        "CPIAUCSL":       walk(265,   0.18,   0.4, "monthly", lo=250),
-        "PCEPILFE":       walk(112,   0.04,   0.1, "monthly", lo=108),
-        "UNRATE":         walk(5.8,  -0.001,  0.08, "monthly", lo=3.4, hi=7.0),
-        "GDPC1":          walk(19500, 28,     90,  "quarterly"),
-        "HOUST":          walk(1450, -0.3,    50,  "monthly", lo=900, hi=2100),
-        "EXHOSLUSM495S":  walk(5400, -1.5,    150, "monthly", lo=3600, hi=6800),
-        "T10Y2Y":         walk(1.20, -0.0009, 0.02, "daily",  lo=-1.5, hi=2.5),
+        "BAMLH0A0HYM2":   walk(4.50,  0.001,  0.10, "daily", lo=2.5, hi=12),
         "DTWEXBGS":       walk(112,   0.012,  0.4, "daily",  lo=95,  hi=135),
         "VIXCLS":         walk(18,    0.001,  1.5, "daily",  lo=10,  hi=55),
+        "T10Y2Y":         walk(1.20, -0.0009, 0.02, "daily",  lo=-1.5, hi=2.5),
+
+        # Inflation / consumption
+        "CPIAUCSL":       walk(265,   0.18,   0.4, "monthly", lo=250),
+        "PCEPILFE":       walk(112,   0.04,   0.1, "monthly", lo=108),
+        "CUUR0000SEHA":   walk(330,   0.6,    0.5, "monthly", lo=320),
+
+        # Labor
+        "UNRATE":         walk(5.8,  -0.001,  0.08, "monthly", lo=3.4, hi=7.0),
+        "PAYEMS":         walk(150000, 170,   85,   "monthly", lo=140000),
+        "ICSA":           walk(280,  -0.4,    18,   "weekly",  lo=180, hi=600),
+        "JTSJOL":         walk(7500,  4,      180,  "monthly", lo=5500, hi=12000),
+
+        # Growth + saving
+        "GDPC1":          walk(19500, 28,     90,  "quarterly"),
+        "PSAVERT":        walk(8.0,  -0.05,   0.5, "monthly", lo=2.0, hi=15.0),
+
+        # Housing supply + demand + prices
+        "HOUST":          walk(1450, -0.3,    50,  "monthly", lo=900, hi=2100),
+        "PERMIT":         walk(1500, -0.2,    50,  "monthly", lo=900, hi=2100),
+        "HSN1F":          walk(720,  -0.4,    35,  "monthly", lo=350, hi=1000),
+        "EXHOSLUSM495S":  walk(5400, -1.5,    150, "monthly", lo=3600, hi=6800),
+        "MSACSR":         walk(5.5,   0.01,   0.3, "monthly", lo=3.0, hi=12.0),
+        "CSUSHPINSA":     walk(240,   0.6,    0.6, "monthly", lo=220),
+
+        # Mortgage credit health
+        "DRSFRMACBS":     walk(2.5,  -0.003,  0.05, "quarterly", lo=1.0, hi=8.0),
+
+        # Sentiment + money + Fed
         "UMCSENT":        walk(80,   -0.05,   2.5, "monthly", lo=50, hi=105),
         "M2SL":           walk(15500, 14,     30,  "monthly", lo=14000),
+        "WALCL":          walk(7800, -3,      30,  "weekly",  lo=6500, hi=9200),
+        "WSHOMCB":        walk(2500, -1.5,    8,   "weekly",  lo=1800, hi=2800),
     }
-    series["MBS_SPREAD"]    = spread(series["MORTGAGE30US"], series["DGS10"])
-    series["CPIAUCSL_YOY"]  = yoy(series["CPIAUCSL"])
-    series["PCEPILFE_YOY"]  = yoy(series["PCEPILFE"])
-    series["GDPC1_YOY"]     = yoy(series["GDPC1"])
+    apply_derivations(series)
     return series
 
 
@@ -437,14 +543,15 @@ def run_production() -> int:
     soft_errors: list[str] = []
     series: dict[str, list[dict]] = {}
 
+    # Levels we need to pull from FRED so derived series (_YOY, _DELTA) can be computed.
+    derivation_levels = ["CPIAUCSL", "PCEPILFE", "GDPC1", "CUUR0000SEHA", "CSUSHPINSA", "PAYEMS"]
     all_ids = (
         list(MORTGAGE_SERIES.keys())
         + ["MORTGAGE5US"]
-        + [sid for sid, *_ in DRIVER_SERIES if not sid.startswith("MBS_")]
-        + [sid for sid, *_ in RELATED_SERIES if not sid.endswith("_YOY")]
-        + ["CPIAUCSL", "PCEPILFE", "GDPC1"]
-        + [sid for sid, *_ in KEY_INDICATORS]
-        + ["DGS2"]
+        + [sid for sid, *_ in DRIVER_SERIES if not is_derived(sid)]
+        + [sid for sid, *_ in RELATED_SERIES if not is_derived(sid)]
+        + derivation_levels
+        + [sid for sid, *_ in KEY_INDICATORS if not is_derived(sid)]
     )
     seen: set[str] = set()
     for sid in all_ids:
@@ -458,11 +565,7 @@ def run_production() -> int:
             fred_ok = False
             series[sid] = []
 
-    if "MORTGAGE30US" in series and "DGS10" in series:
-        series["MBS_SPREAD"] = spread(series["MORTGAGE30US"], series["DGS10"])
-    for level, derived in (("CPIAUCSL", "CPIAUCSL_YOY"), ("PCEPILFE", "PCEPILFE_YOY"), ("GDPC1", "GDPC1_YOY")):
-        if level in series and series[level]:
-            series[derived] = yoy(series[level])
+    apply_derivations(series)
 
     try:
         by_day = fetch_news()

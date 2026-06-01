@@ -31,6 +31,16 @@ window.SITE_CONFIG = {
   // Google Analytics 4 — paste your Measurement ID (G-XXXXXXXXXX). Loads only
   // after the visitor accepts cookies.
   ga4: { measurementId: "G-XXXXXXXXXX" },
+
+  // Advertised rates per lender for the "Top lenders in your state" table.
+  // Keys are lender ids from assets/app.js LENDERS. Values: { '30yr_fixed': pct, '15yr_fixed': pct }.
+  // Lenders with no rate fall to the bottom of the table (shown as "—"). Refresh
+  // these whenever you re-pull rates from your partner feed or LOS.
+  lenderRates: {
+    // rocket:    { '30yr_fixed': 6.875, '15yr_fixed': 5.99 },
+    // nbkc:      { '30yr_fixed': 6.625, '15yr_fixed': 5.75 },
+    // amerisave: { '30yr_fixed': 6.750 },
+  },
 };
 
 // Back-compat alias for the existing form code.

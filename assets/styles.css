@@ -406,14 +406,120 @@ tbody tr:hover { background: color-mix(in srgb, var(--accent) 5%, transparent); 
 .payoff-footnote { color: var(--muted); font-size: .76rem; margin-top: .25rem; }
 .calc-reset-wrap { margin-top: .75rem; }
 
+/* ─── Drawer navigation ──────────────────────────────────────── */
+.topbar-inner { justify-content: flex-start; }
+.brand { margin-right: auto; }
+
+.hamburger {
+  appearance: none; background: transparent; border: 0;
+  padding: .5rem .6rem; cursor: pointer; border-radius: var(--radius-sm);
+  display: inline-flex; flex-direction: column; gap: 4px; justify-content: center;
+}
+.hamburger:hover { background: var(--panel-2); }
+.hamburger:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.hamburger span {
+  display: block; width: 22px; height: 2px;
+  background: var(--ink); border-radius: 1px;
+  transition: background .15s;
+}
+.hamburger:hover span { background: var(--accent); }
+
+.drawer-backdrop {
+  position: fixed; inset: 0; z-index: 99;
+  background: color-mix(in srgb, var(--ink) 55%, transparent);
+  backdrop-filter: blur(2px);
+  animation: drawer-fade .2s ease-out;
+}
+@keyframes drawer-fade { from { opacity: 0; } to { opacity: 1; } }
+
+.drawer {
+  position: fixed; top: 0; left: 0; bottom: 0;
+  width: min(320px, 85vw);
+  background: var(--panel); border-right: 1px solid var(--border);
+  z-index: 100; box-shadow: 4px 0 18px rgba(15,23,42,.12);
+  transform: translateX(-100%); transition: transform .25s ease-out;
+  display: flex; flex-direction: column;
+  overflow-y: auto;
+}
+.drawer.open { transform: translateX(0); }
+.drawer-head {
+  display: flex; align-items: center; gap: .65rem;
+  padding: 1rem 1.25rem; border-bottom: 1px solid var(--border);
+}
+.drawer-title { color: var(--ink); font-size: 1rem; flex: 1; font-weight: 700; }
+.drawer-close {
+  appearance: none; background: transparent; border: 0;
+  font-size: 1.6rem; line-height: 1; cursor: pointer; color: var(--ink-2);
+  padding: 0 .25rem; border-radius: var(--radius-sm);
+}
+.drawer-close:hover { color: var(--ink); background: var(--panel-2); }
+.drawer-nav { padding: .75rem 0; }
+.drawer-section { padding: .5rem 1.25rem 1rem; }
+.drawer-section h3 {
+  font-size: .72rem; letter-spacing: .08em; text-transform: uppercase;
+  color: var(--muted); margin: 0 0 .5rem; font-weight: 600;
+}
+.drawer-section a {
+  display: block; padding: .55rem 0; color: var(--ink); font-size: .92rem;
+  border-bottom: 1px solid var(--border-2);
+}
+.drawer-section a:hover { color: var(--accent); text-decoration: none; }
+.drawer-section a:last-child { border-bottom: 0; }
+.drawer-section a[aria-current="page"] { color: var(--accent); font-weight: 600; }
+
+/* ─── Lender directory + state picker ────────────────────────── */
+.state-picker-wrap {
+  display: flex; align-items: center; gap: .5rem;
+}
+.state-picker-label { font-size: .82rem; color: var(--ink-2); font-weight: 600; }
+#state-picker {
+  font: 600 .9rem var(--sans);
+  padding: .45rem .6rem; border-radius: var(--radius-sm);
+  border: 1px solid var(--border); background: var(--panel); color: var(--ink);
+  min-width: 160px;
+}
+#state-picker:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+.lenders-table .rate-value { font-size: .95rem; }
+.lenders-table .nmls-link { color: var(--muted); font-family: var(--mono); font-size: .82rem; }
+.lenders-table .nmls-link:hover { color: var(--accent); }
+.lenders-handoff { margin-top: .85rem; }
+.lenders-handoff-link {
+  display: inline-block; text-decoration: none;
+}
+.lenders-handoff-link:hover { text-decoration: none; }
+
+/* ─── Lender tricks & negotiation cards ──────────────────────── */
+.tricks-filter { display: flex; gap: .35rem; flex-wrap: wrap; }
+.tricks-filter .pill { padding: .4rem .75rem; font-size: .78rem; }
+.tricks-grid { margin-top: .25rem; }
+.trick-card { border-left: 3px solid var(--border); }
+.trick-card.trick-earn       { border-left-color: var(--accent); }
+.trick-card.trick-trick      { border-left-color: var(--up); }
+.trick-card.trick-negotiable { border-left-color: var(--down); }
+.trick-card.trick-fixed      { border-left-color: var(--muted); }
+.trick-card .card-head { align-items: flex-start; }
+.trick-tag {
+  font: 600 .65rem var(--sans);
+  letter-spacing: .04em; text-transform: uppercase;
+  padding: .15rem .45rem; border-radius: 999px; white-space: nowrap;
+}
+.trick-tag-earn       { background: var(--accent-soft); color: var(--accent-2); }
+.trick-tag-trick      { background: var(--up-bg);     color: var(--up); }
+.trick-tag-negotiable { background: var(--down-bg);   color: var(--down); }
+.trick-tag-fixed      { background: var(--border-2);  color: var(--muted); }
+
 /* ─── Responsive ─────────────────────────────────────────────── */
 @media (max-width: 720px) {
   .chart-canvas { height: 320px; }
   .panel { padding: 1rem; }
   .topbar-inner { padding: .75rem 1rem; }
   h1 { font-size: 1.15rem; }
+  .subtitle { display: none; }
   .offers-buttons { flex-direction: column; align-items: stretch; }
   .offer-btn { justify-content: center; }
   .consent-banner { flex-direction: column; align-items: stretch; text-align: center; }
   .consent-actions { justify-content: center; }
+  .state-picker-wrap { width: 100%; }
+  #state-picker { flex: 1; }
+  .tricks-filter { width: 100%; }
 }

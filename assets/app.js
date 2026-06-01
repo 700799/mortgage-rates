@@ -53,8 +53,10 @@ async function init() {
 
   renderHeader();
   renderRateTable();
+  renderLenders();
   renderOffers();
   renderActions();
+  renderTricks();
   renderDriverRates();
   renderRelatedIndicators();
   renderKeyIndicators();
@@ -695,6 +697,183 @@ function renderActions() {
   }
   document.querySelectorAll('[data-action-title]').forEach(el => {
     el.addEventListener('click', () => trackEvent('action_cta_click', { action: el.dataset.actionTitle, placement: 'actions_cards' }));
+  });
+}
+
+// ─── Lender directory (state-filtered) ────────────────────────────
+const US_STATES = [
+  ['AL','Alabama'],['AK','Alaska'],['AZ','Arizona'],['AR','Arkansas'],['CA','California'],
+  ['CO','Colorado'],['CT','Connecticut'],['DE','Delaware'],['DC','D.C.'],['FL','Florida'],
+  ['GA','Georgia'],['HI','Hawaii'],['ID','Idaho'],['IL','Illinois'],['IN','Indiana'],
+  ['IA','Iowa'],['KS','Kansas'],['KY','Kentucky'],['LA','Louisiana'],['ME','Maine'],
+  ['MD','Maryland'],['MA','Massachusetts'],['MI','Michigan'],['MN','Minnesota'],['MS','Mississippi'],
+  ['MO','Missouri'],['MT','Montana'],['NE','Nebraska'],['NV','Nevada'],['NH','New Hampshire'],
+  ['NJ','New Jersey'],['NM','New Mexico'],['NY','New York'],['NC','North Carolina'],['ND','North Dakota'],
+  ['OH','Ohio'],['OK','Oklahoma'],['OR','Oregon'],['PA','Pennsylvania'],['RI','Rhode Island'],
+  ['SC','South Carolina'],['SD','South Dakota'],['TN','Tennessee'],['TX','Texas'],['UT','Utah'],
+  ['VT','Vermont'],['VA','Virginia'],['WA','Washington'],['WV','West Virginia'],['WI','Wisconsin'],['WY','Wyoming'],
+];
+
+// Curated national lenders. `excludeStates` lists where the lender doesn't lend
+// (verify on NMLS Consumer Access before relying on this for any decision).
+// Rates per lender are owner-supplied in config.js → SITE_CONFIG.lenderRates.
+const LENDERS = [
+  { id: 'rocket',        name: 'Rocket Mortgage',          nmls: '3030',   notes: 'Largest U.S. mortgage originator.' },
+  { id: 'loandepot',     name: 'loanDepot',                nmls: '174457', notes: 'Online lender, broad product set.' },
+  { id: 'better',        name: 'Better Mortgage',          nmls: '330511', notes: 'Digital-first, no-commission LOs.', excludeStates: ['HI','MA','NV','NH','VA','MN'] },
+  { id: 'amerisave',     name: 'AmeriSave Mortgage',       nmls: '1168',   notes: 'Online lender, competitive on rate.' },
+  { id: 'nbkc',          name: 'NBKC Bank',                nmls: '409631', notes: 'Online bank; typically low fees.' },
+  { id: 'guild',         name: 'Guild Mortgage',           nmls: '3274',   notes: 'Retail + correspondent.', excludeStates: ['NY'] },
+  { id: 'newamerican',   name: 'New American Funding',     nmls: '6606',   notes: 'Retail lender, broad footprint.' },
+  { id: 'cardinal',      name: 'Cardinal Financial',       nmls: '66247',  notes: 'Wholesale + retail.' },
+  { id: 'bofa',          name: 'Bank of America',          nmls: '399802', notes: 'Bank; relationship discounts.' },
+  { id: 'chase',         name: 'Chase Home Lending',       nmls: '399789', notes: 'Bank; broad branch network.' },
+  { id: 'usbank',        name: 'U.S. Bank',                nmls: '402761', notes: 'Bank; conventional + jumbo.' },
+  { id: 'pennymac',      name: 'PennyMac',                 nmls: '35953',  notes: 'Servicer + originator.' },
+  { id: 'movement',      name: 'Movement Mortgage',        nmls: '39179',  notes: 'Retail; fast-close pitch.', excludeStates: ['HI'] },
+  { id: 'fairway',       name: 'Fairway Independent Mortgage', nmls: '2289', notes: 'Retail; broad LO network.' },
+  { id: 'crosscountry',  name: 'CrossCountry Mortgage',    nmls: '3029',   notes: 'Retail + correspondent.' },
+  { id: 'mrcooper',      name: 'Mr. Cooper (Nationstar)',  nmls: '2119',   notes: 'Servicer-originator hybrid.' },
+  { id: 'veteransunited', name: 'Veterans United',         nmls: '1907',   notes: 'VA-loan specialist (not VA-only).' },
+  { id: 'navyfederal',   name: 'Navy Federal CU',          nmls: '399807', notes: 'Credit union; military membership required.' },
+  { id: 'truist',        name: 'Truist Mortgage',          nmls: '399803', notes: 'Bank; southeast strength.' },
+  { id: 'flagstar',      name: 'Flagstar Bank',            nmls: '417490', notes: 'Bank; wholesale + retail.' },
+];
+
+function renderLenders() {
+  const sel = document.getElementById('state-picker');
+  if (!sel) return;
+  if (!sel.options.length) {
+    for (const [code, name] of US_STATES) {
+      const opt = document.createElement('option');
+      opt.value = code; opt.textContent = name;
+      sel.appendChild(opt);
+    }
+    sel.value = localStorage.getItem('lender-state') || 'CA';
+    sel.addEventListener('change', () => {
+      localStorage.setItem('lender-state', sel.value);
+      renderLenders();
+    });
+  }
+  const state = sel.value;
+  const rates = (cfg().lenderRates) || {};
+  const eligible = LENDERS.filter(l => !l.excludeStates || !l.excludeStates.includes(state));
+  eligible.sort((a, b) => {
+    const ra = rates[a.id]?.['30yr_fixed'];
+    const rb = rates[b.id]?.['30yr_fixed'];
+    if (ra == null && rb == null) return a.name.localeCompare(b.name);
+    if (ra == null) return 1;
+    if (rb == null) return -1;
+    return ra - rb;
+  });
+  const top10 = eligible.slice(0, 10);
+
+  const tbody = document.getElementById('lenders-body');
+  tbody.innerHTML = '';
+  const aff = affiliateLinks()[0];
+  for (const l of top10) {
+    const r = rates[l.id] || {};
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td><span class="indicator-name">${escapeHtml(l.name)}</span><br><span class="muted">${escapeHtml(l.notes)}</span></td>
+      <td><a href="https://www.nmlsconsumeraccess.org/EntityDetails.aspx/COMPANY/${encodeURIComponent(l.nmls)}" target="_blank" rel="noopener" class="nmls-link">${escapeHtml(l.nmls)}</a></td>
+      <td>${r['30yr_fixed'] != null ? `<span class="rate-value">${fmtPct(r['30yr_fixed'])}</span>` : '<span class="muted">—</span>'}</td>
+      <td>${r['15yr_fixed'] != null ? `<span class="rate-value">${fmtPct(r['15yr_fixed'])}</span>` : '<span class="muted">—</span>'}</td>
+    `;
+    const ctaTd = document.createElement('td');
+    if (aff) {
+      const a = document.createElement('a');
+      a.className = 'cta-link';
+      a.href = aff.url; a.target = '_blank'; a.rel = 'sponsored noopener';
+      a.textContent = aff.cta || 'Get quote';
+      a.addEventListener('click', () => trackEvent('lender_quote_click', { lender: l.id, state }));
+      ctaTd.appendChild(a);
+    } else {
+      ctaTd.innerHTML = '<span class="muted">—</span>';
+    }
+    tr.appendChild(ctaTd);
+    tbody.appendChild(tr);
+  }
+
+  const handoff = document.getElementById('lenders-handoff');
+  handoff.innerHTML = '';
+  if (aff) {
+    const stateName = (US_STATES.find(s => s[0] === state) || [])[1] || state;
+    const a = document.createElement('a');
+    a.className = 'primary lenders-handoff-link';
+    a.href = aff.url; a.target = '_blank'; a.rel = 'sponsored noopener';
+    a.textContent = `Compare live quotes for ${stateName} →`;
+    a.addEventListener('click', () => trackEvent('lender_state_handoff', { partner: aff.name, state }));
+    handoff.appendChild(a);
+  }
+}
+
+// ─── Lender tricks & negotiation cards ─────────────────────────────
+const TRICKS = [
+  { tag: 'earn',       title: 'Origination fee',
+    body: "Lender's upfront cut — typically 0.5–1.5% of loan. It's also their first ask. Always negotiate it; many will cut or waive it for strong borrowers." },
+  { tag: 'earn',       title: 'Discount points',
+    body: 'Pay 1% upfront to lower the rate roughly 0.25%. Lender pockets the cash. Only worth it if you\'ll keep the loan 5+ years.' },
+  { tag: 'earn',       title: 'Servicing rights sale',
+    body: 'Most lenders sell the right to collect your payments for ~1–1.5% of the balance. Your loan often changes hands within months of close — that\'s a separate revenue stream.' },
+  { tag: 'earn',       title: 'Sale into MBS',
+    body: 'Conforming loans are bundled and sold into mortgage-backed securities within weeks. The premium over par is the lender\'s real profit — not your interest.' },
+  { tag: 'earn',       title: 'Yield Spread Premium (LPC)',
+    body: 'Brokers get "Lender Paid Compensation" for steering you into a higher-rate loan. Federally regulated, but it still happens. Ask for the disclosure.' },
+
+  { tag: 'trick',      title: 'APR ≠ interest rate',
+    body: 'Always compare APR, not the headline rate. APR rolls in points and lender fees — it\'s the apples-to-apples cost of the loan.' },
+  { tag: 'trick',      title: '"No-cost" loan',
+    body: 'Lender credits "pay" your closing costs in exchange for a higher rate. Feels free, costs more forever. Run the breakeven on Page 1 of the Loan Estimate before agreeing.' },
+  { tag: 'trick',      title: 'Bait-and-switch at closing',
+    body: 'Compare the Loan Estimate to the Closing Disclosure line-by-line. By law most lender-controlled fees can\'t rise more than 10% — but they\'ll try to slip changes in.' },
+  { tag: 'trick',      title: 'Pre-approval ≠ pre-qualification',
+    body: 'Pre-qual is a soft conversation. Pre-approval is a hard pull with docs and means something. Don\'t bring a pre-qual to a competitive offer.' },
+  { tag: 'trick',      title: 'Teaser ARM / interest-only',
+    body: 'Low intro rate, sharp reset. Some ARMs allow negative amortization (balance grows). Read the reset schedule and caps before signing.' },
+
+  { tag: 'negotiable', title: 'Junk fees',
+    body: '"Processing," "underwriting," "doc prep," "admin" fees can total $1,000+. Push back — they\'re invented and frequently waived to win the loan.' },
+  { tag: 'negotiable', title: 'Rate lock + extensions',
+    body: 'Lock period (30/45/60 days) and extension fees are negotiable. Get the lock and any extension cap in writing before you sign anything.' },
+  { tag: 'negotiable', title: 'Title insurance & escrow',
+    body: 'Section C of the Loan Estimate lists what you can shop. Title quotes vary 20%+ across providers. Use Section C; ignore the lender\'s defaults.' },
+  { tag: 'negotiable', title: 'PMI structure',
+    body: 'Under 20% down? Compare borrower-paid PMI, lender-paid MI (priced into rate), and an 80-10-10 piggyback. Total cost varies enormously — make them show all three.' },
+
+  { tag: 'fixed',      title: 'Appraisal, recording, transfer tax, per-diem interest',
+    body: 'Third-party and government fees set by the appraisal market or by law. You\'ll pay them at any lender. Listed in Section B (cannot shop) of the Loan Estimate.' },
+];
+
+function renderTricks() {
+  const grid = document.getElementById('tricks-grid');
+  if (!grid) return;
+  const labels = { trick: 'Common trick', earn: 'How they earn', negotiable: 'Negotiable', fixed: 'Not negotiable' };
+  grid.innerHTML = '';
+  for (const t of TRICKS) {
+    const card = document.createElement('div');
+    card.className = `card trick-card trick-${t.tag}`;
+    card.dataset.tag = t.tag;
+    card.innerHTML = `
+      <div class="card-head">
+        <span class="card-title">${escapeHtml(t.title)}</span>
+        <span class="trick-tag trick-tag-${t.tag}">${escapeHtml(labels[t.tag])}</span>
+      </div>
+      <span class="card-explain">${escapeHtml(t.body)}</span>
+    `;
+    grid.appendChild(card);
+  }
+  document.querySelectorAll('[data-tricks-filter]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const filter = btn.dataset.tricksFilter;
+      document.querySelectorAll('[data-tricks-filter]').forEach(b => {
+        b.setAttribute('aria-selected', String(b === btn));
+      });
+      grid.querySelectorAll('.trick-card').forEach(c => {
+        c.hidden = !(filter === 'all' || c.dataset.tag === filter);
+      });
+      trackEvent('tricks_filter', { filter });
+    });
   });
 }
 
