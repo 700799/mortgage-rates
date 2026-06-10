@@ -186,6 +186,11 @@ a:hover { text-decoration: underline; }
   margin-top: .6rem; font-family: var(--mono); font-size: .82rem;
   min-height: 1.2em;
 }
+.chart-unavailable {
+  display: flex; align-items: center; justify-content: center;
+  height: 100%; min-height: 180px; margin: 0; padding: 1rem;
+  text-align: center; font-size: .9rem;
+}
 
 /* ─── Tables ─────────────────────────────────────────────────── */
 .table-wrap { overflow-x: auto; border-radius: var(--radius-sm); }

@@ -60,17 +60,28 @@ async function init() {
   renderKeyIndicators();
   renderNews();
 
-  await waitForGlobal('LightweightCharts', 3000);
-  initChart();
-  renderPayoffCalc();
-  refreshSparklines();
-
+  // Interactive controls must work even if the third-party chart library
+  // (loaded from a CDN) is slow or unreachable, so wire them up first. These
+  // do not depend on LightweightCharts.
   wirePills();
-  wireChartControls();
   wireNewsPager();
   wireForm();
   initConsent();
   window.addEventListener('hashchange', () => { applyHashRange(); refreshRangeUI(); });
+
+  // The charts depend on a CDN script. Treat them as optional: a CDN hiccup
+  // should degrade to a "chart unavailable" notice, not take down the page
+  // and leave every control dead.
+  try {
+    await waitForGlobal('LightweightCharts', 8000);
+    initChart();
+    renderPayoffCalc();
+    wireChartControls();
+    refreshSparklines();
+  } catch (err) {
+    console.error('Charts unavailable:', err);
+    showChartUnavailable();
+  }
 }
 
 async function fetchJSON(url) {
@@ -88,6 +99,18 @@ function waitForGlobal(name, timeoutMs) {
       setTimeout(poll, 50);
     })();
   });
+}
+
+// The chart library is fetched from a CDN; if it never arrives, show a graceful
+// notice in the chart hosts instead of leaving blank gaps on the page.
+function showChartUnavailable() {
+  const msg = 'Interactive chart unavailable right now — the rate data above is still current. Reload to retry.';
+  const mainHost = document.getElementById('chart');
+  if (mainHost) mainHost.innerHTML = `<p class="chart-unavailable muted">${msg}</p>`;
+  const legend = document.getElementById('chart-legend');
+  if (legend) legend.innerHTML = '';
+  const payoffHost = document.getElementById('payoff-chart');
+  if (payoffHost) payoffHost.innerHTML = `<p class="chart-unavailable muted">${msg}</p>`;
 }
 
 // ─── Header ────────────────────────────────────────────────────────
