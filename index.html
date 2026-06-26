@@ -236,8 +236,174 @@
       </div>
     </section>
 
+    <!-- ─── Mortgage calculators ────────────────────────────── -->
+    <nav class="calc-nav" aria-label="Mortgage calculators">
+      <span class="calc-nav-label">Calculators</span>
+      <a href="#calc-piti">Monthly payment</a>
+      <a href="#calc-afford">Affordability</a>
+      <a href="#calc-refi">Refinance</a>
+      <a href="#payoff">Payoff vs invest</a>
+    </nav>
+
+    <!-- ─── Monthly payment / PITI calculator ───────────────── -->
+    <section class="panel" id="calc-piti" aria-labelledby="piti-heading">
+      <div class="panel-head">
+        <div>
+          <h2 id="piti-heading">What will my monthly payment be?</h2>
+          <p class="muted">Principal, interest, taxes, insurance and PMI — pre-filled with today's 30-year rate.</p>
+        </div>
+      </div>
+      <div class="calc-controls">
+        <div class="field">
+          <label for="piti-price">Home price ($)</label>
+          <input id="piti-price" type="number" min="0" step="5000" value="450000" />
+        </div>
+        <div class="field">
+          <label for="piti-down">Down payment ($)</label>
+          <input id="piti-down" type="number" min="0" step="5000" value="90000" />
+        </div>
+        <div class="field">
+          <label for="piti-down-pct">Down payment (%)</label>
+          <input id="piti-down-pct" type="number" min="0" max="100" step="1" value="20" />
+        </div>
+        <div class="field">
+          <label for="piti-rate">Rate (%)</label>
+          <input id="piti-rate" type="number" min="0" step="0.05" value="7" />
+        </div>
+        <div class="field">
+          <label for="piti-term">Term (years)</label>
+          <input id="piti-term" type="number" min="1" max="40" step="1" value="30" />
+        </div>
+        <div class="field">
+          <label for="piti-tax">Property tax (%/yr)</label>
+          <input id="piti-tax" type="number" min="0" step="0.05" value="1.1" />
+        </div>
+        <div class="field">
+          <label for="piti-insurance">Home insurance ($/yr)</label>
+          <input id="piti-insurance" type="number" min="0" step="100" value="1800" />
+        </div>
+        <div class="field">
+          <label for="piti-pmi">PMI (%/yr)</label>
+          <input id="piti-pmi" type="number" min="0" step="0.05" value="0.5" />
+        </div>
+        <div class="field">
+          <label for="piti-hoa">HOA ($/mo)</label>
+          <input id="piti-hoa" type="number" min="0" step="10" value="0" />
+        </div>
+      </div>
+      <div id="piti-breakdown" class="calc-results" aria-live="polite"></div>
+      <details class="amort-details">
+        <summary>Show amortization schedule</summary>
+        <div class="table-wrap">
+          <table class="amort-table">
+            <thead><tr><th>Year</th><th>Principal paid</th><th>Interest paid</th><th>Balance</th></tr></thead>
+            <tbody id="piti-amort-body"></tbody>
+          </table>
+        </div>
+      </details>
+      <div id="piti-chart" class="chart-canvas calc-chart-optional" role="img" aria-label="Loan balance over time"></div>
+      <p class="payoff-footnote">Estimate only — excludes points, lender fees and escrow specifics. PMI auto-drops at 20% equity. Not financial advice.</p>
+      <p class="calc-reset-wrap"><button type="button" class="ghost" id="piti-reset">Reset to defaults</button></p>
+    </section>
+
+    <!-- ─── Affordability calculator ────────────────────────── -->
+    <section class="panel" id="calc-afford" aria-labelledby="afford-heading">
+      <div class="panel-head">
+        <div>
+          <h2 id="afford-heading">How much house can I afford?</h2>
+          <p class="muted">Based on the 28% / 36% debt-to-income guidelines lenders use.</p>
+        </div>
+      </div>
+      <div class="calc-controls">
+        <div class="field">
+          <label for="afford-income">Annual income ($)</label>
+          <input id="afford-income" type="number" min="0" step="1000" value="120000" />
+        </div>
+        <div class="field">
+          <label for="afford-debts">Monthly debts ($)</label>
+          <input id="afford-debts" type="number" min="0" step="50" value="500" />
+        </div>
+        <div class="field">
+          <label for="afford-down">Down payment ($)</label>
+          <input id="afford-down" type="number" min="0" step="5000" value="60000" />
+        </div>
+        <div class="field">
+          <label for="afford-rate">Rate (%)</label>
+          <input id="afford-rate" type="number" min="0" step="0.05" value="7" />
+        </div>
+        <div class="field">
+          <label for="afford-term">Term (years)</label>
+          <input id="afford-term" type="number" min="1" max="40" step="1" value="30" />
+        </div>
+        <div class="field">
+          <label for="afford-tax">Property tax (%/yr)</label>
+          <input id="afford-tax" type="number" min="0" step="0.05" value="1.1" />
+        </div>
+        <div class="field">
+          <label for="afford-insurance">Home insurance ($/yr)</label>
+          <input id="afford-insurance" type="number" min="0" step="100" value="1800" />
+        </div>
+        <div class="field">
+          <label for="afford-front">Front-end DTI: <output id="afford-front-out">28%</output></label>
+          <input id="afford-front" type="range" min="20" max="40" step="1" value="28" />
+        </div>
+        <div class="field">
+          <label for="afford-back">Back-end DTI: <output id="afford-back-out">36%</output></label>
+          <input id="afford-back" type="range" min="28" max="50" step="1" value="36" />
+        </div>
+      </div>
+      <div id="afford-results" class="calc-results" aria-live="polite"></div>
+      <div id="afford-dti" class="dti-bars" aria-hidden="true"></div>
+      <p id="afford-note" class="calc-note" hidden></p>
+      <p class="payoff-footnote">A guideline, not a guarantee — lenders also weigh credit, assets and loan type. Not financial advice.</p>
+      <p class="calc-reset-wrap"><button type="button" class="ghost" id="afford-reset">Reset to defaults</button></p>
+    </section>
+
+    <!-- ─── Refinance break-even calculator ─────────────────── -->
+    <section class="panel" id="calc-refi" aria-labelledby="refi-heading">
+      <div class="panel-head">
+        <div>
+          <h2 id="refi-heading">Should I refinance?</h2>
+          <p class="muted">Your monthly savings and how long until closing costs pay for themselves — new rate pre-filled.</p>
+        </div>
+      </div>
+      <div class="calc-controls">
+        <div class="field">
+          <label for="refi-balance">Current balance ($)</label>
+          <input id="refi-balance" type="number" min="0" step="5000" value="350000" />
+        </div>
+        <div class="field">
+          <label for="refi-current-rate">Current rate (%)</label>
+          <input id="refi-current-rate" type="number" min="0" step="0.05" value="7.0" />
+        </div>
+        <div class="field">
+          <label for="refi-remaining">Years remaining</label>
+          <input id="refi-remaining" type="number" min="1" max="40" step="1" value="25" />
+        </div>
+        <div class="field">
+          <label for="refi-new-rate">New rate (%)</label>
+          <input id="refi-new-rate" type="number" min="0" step="0.05" value="6.5" />
+        </div>
+        <div class="field">
+          <label for="refi-new-term">New term (years)</label>
+          <input id="refi-new-term" type="number" min="1" max="40" step="1" value="30" />
+        </div>
+        <div class="field">
+          <label for="refi-costs">Closing costs ($)</label>
+          <input id="refi-costs" type="number" min="0" step="500" value="6000" />
+        </div>
+        <div class="field">
+          <label for="refi-cashout">Cash-out ($)</label>
+          <input id="refi-cashout" type="number" min="0" step="1000" value="0" />
+        </div>
+      </div>
+      <div id="refi-results" class="calc-results" aria-live="polite"></div>
+      <p class="payoff-footnote">Compares principal &amp; interest only; escrow for taxes and insurance carries over. A longer new term can lower your payment but raise lifetime interest. Not financial advice.</p>
+      <p class="calc-reset-wrap"><button type="button" class="ghost" id="refi-reset">Reset to defaults</button></p>
+    </section>
+
     <!-- ─── Pay off early vs S&P 500 calculator ─────────────── -->
-    <section class="panel" aria-labelledby="payoff-heading">
+    <section class="panel" id="payoff" aria-labelledby="payoff-heading">
       <div class="panel-head">
         <div>
           <h2 id="payoff-heading">Pay off early or invest in the S&amp;P 500?</h2>

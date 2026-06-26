@@ -66,6 +66,10 @@ async function init() {
   wirePills();
   wireNewsPager();
   wireForm();
+  wirePayoffCalc();
+  wirePitiCalc();
+  wireAffordCalc();
+  wireRefiCalc();
   initConsent();
   window.addEventListener('hashchange', () => { applyHashRange(); refreshRangeUI(); });
 
@@ -78,6 +82,7 @@ async function init() {
     renderPayoffCalc();
     wireChartControls();
     refreshSparklines();
+    initPitiChart();
   } catch (err) {
     console.error('Charts unavailable:', err);
     showChartUnavailable();
@@ -721,6 +726,330 @@ function renderActions() {
   });
 }
 
+// ─── Mortgage calculators ──────────────────────────────────────────
+// Pure financial math (no DOM), shared by the calculators below. The numbers
+// are computed independently of the chart library, so every calculator keeps
+// working even when the LightweightCharts CDN is slow or unreachable.
+
+let pitiChart = null, pitiBalArea = null;
+
+// Standard amortizing monthly principal+interest. 0% rate → straight-line.
+function monthlyPI(principal, ratePct, years) {
+  const P = Math.max(0, principal);
+  const N = Math.max(1, Math.round(years * 12));
+  const rm = ratePct / 100 / 12;
+  if (P === 0) return 0;
+  if (rm <= 0) return P / N;
+  return P * (rm * Math.pow(1 + rm, N)) / (Math.pow(1 + rm, N) - 1);
+}
+
+// 1. Monthly payment / PITI + yearly amortization schedule.
+function computePITI({ homePrice, downPayment, ratePct, years, taxRatePct, insuranceAnnual, pmiAnnualPct, hoaMonthly }) {
+  const price = Math.max(0, homePrice);
+  const down  = Math.min(Math.max(0, downPayment), price);
+  const loan  = price - down;
+  const piMonthly  = monthlyPI(loan, ratePct, years);
+  const taxMonthly = (price * (taxRatePct / 100)) / 12;   // tax is on price, not loan
+  const insMonthly = Math.max(0, insuranceAnnual) / 12;
+  const hoa        = Math.max(0, hoaMonthly);
+  const ltv        = price > 0 ? loan / price : 0;
+  const pmiMonthly = ltv > 0.80 ? (loan * (Math.max(0, pmiAnnualPct) / 100)) / 12 : 0;
+
+  const N = Math.max(1, Math.round(years * 12));
+  const rm = ratePct / 100 / 12;
+  let bal = loan, totalInterest = 0, pmiDropMonth = null;
+  let yrPrincipal = 0, yrInterest = 0;
+  const schedule = [];
+  for (let m = 1; m <= N && bal > 0.005; m++) {
+    const interest  = bal * rm;
+    const principal = Math.min(bal, piMonthly - interest);
+    bal = Math.max(0, bal - principal);
+    totalInterest += interest;
+    yrInterest += interest;
+    yrPrincipal += principal;
+    if (pmiDropMonth === null && price > 0 && bal / price <= 0.80) pmiDropMonth = m;
+    if (m % 12 === 0 || bal <= 0.005) {
+      schedule.push({ year: Math.ceil(m / 12), principalPaid: yrPrincipal, interestPaid: yrInterest, balance: bal });
+      yrPrincipal = 0; yrInterest = 0;
+    }
+  }
+  const totalMonthly = piMonthly + taxMonthly + insMonthly + pmiMonthly + hoa;
+  return { loan, piMonthly, taxMonthly, insMonthly, pmiMonthly, hoaMonthly: hoa, totalMonthly, totalInterest, pmiDropMonth, schedule, ltv };
+}
+
+// 2. Affordability — front-end (28%) and back-end (36%) DTI, binding constraint.
+function computeAffordability({ annualIncome, monthlyDebts, downPayment, ratePct, years, taxRatePct, insuranceAnnual, frontDtiPct, backDtiPct }) {
+  const grossMonthly = Math.max(0, annualIncome) / 12;
+  const debts = Math.max(0, monthlyDebts);
+  const down  = Math.max(0, downPayment);
+  const frontCap = grossMonthly * (frontDtiPct / 100);
+  const backCap  = grossMonthly * (backDtiPct / 100) - debts;
+  const maxPITI  = Math.max(0, Math.min(frontCap, backCap));
+  const binding  = backCap < frontCap ? 'back' : 'front';
+
+  // PITI = f·loan + taxM·(loan + down) + insM, with price = loan + down, so
+  // loan = (maxPITI − insM − taxM·down) / (f + taxM).
+  const f    = monthlyPI(1, ratePct, years);   // $/month per $1 of loan
+  const taxM = (taxRatePct / 100) / 12;        // $/month per $1 of price
+  const insM = Math.max(0, insuranceAnnual) / 12;
+  const denom = f + taxM;
+  let maxLoan = denom > 0 ? (maxPITI - insM - taxM * down) / denom : 0;
+  maxLoan = Math.max(0, maxLoan);
+  const maxPrice  = maxLoan + down;
+  const piMonthly = monthlyPI(maxLoan, ratePct, years);
+  return { maxPrice, maxLoan, piMonthly, monthlyPITI: maxPITI, frontCap, backCap, binding };
+}
+
+// 3. Refinance break-even.
+function computeRefi({ balance, currentRatePct, remainingYears, newRatePct, newYears, closingCosts, cashOut }) {
+  const curBal  = Math.max(0, balance);
+  const newLoan = curBal + Math.max(0, cashOut);
+  const curPI = monthlyPI(curBal, currentRatePct, remainingYears);
+  const newPI = monthlyPI(newLoan, newRatePct, newYears);
+  const monthlySavings = curPI - newPI;
+  const costs = Math.max(0, closingCosts);
+  const breakEvenMonths = monthlySavings > 0 ? costs / monthlySavings : Infinity;
+  const stayInterest = curPI * Math.round(remainingYears * 12) - curBal;
+  const refiInterest = newPI * Math.round(newYears * 12) - newLoan;
+  const lifetimeInterestDiff = stayInterest - refiInterest;   // + = refi saves interest
+  return { curPI, newPI, monthlySavings, breakEvenMonths, lifetimeInterestDiff, newLoan };
+}
+
+// ── Small DOM helpers shared by the calculators ──
+function num(id)  { const el = document.getElementById(id); return el ? (Number(el.value) || 0) : 0; }
+function setVal(id, v)  { const el = document.getElementById(id); if (el) el.value = v; }
+function setText(id, s) { const el = document.getElementById(id); if (el) el.textContent = s; }
+function clamp(v, lo, hi) { return Math.min(hi, Math.max(lo, Number(v) || 0)); }
+function calcItem(label, value, cls) {
+  return `<div class="calc-item${cls ? ' ' + cls : ''}"><span class="calc-label">${label}</span><span class="calc-num">${value}</span></div>`;
+}
+
+// Fill a rate input with the latest non-null observation of a FRED series.
+function autoFillRate(inputId, seriesId) {
+  const el = document.getElementById(inputId);
+  if (!el) return null;
+  const obs = (state.series[seriesId] || {}).observations || [];
+  let latest = null;
+  for (let i = obs.length - 1; i >= 0; i--) {
+    if (obs[i].value != null) { latest = obs[i].value; break; }
+  }
+  if (latest != null) el.value = Number(latest).toFixed(2);
+  return latest;
+}
+
+// Debounced analytics so dragging a slider doesn't spam events.
+const calcTrackTimers = {};
+function throttledTrack(name, params) {
+  if (calcTrackTimers[name]) clearTimeout(calcTrackTimers[name]);
+  calcTrackTimers[name] = setTimeout(() => trackEvent(name, params), 600);
+}
+
+function monthsText(month) {
+  const yrs = Math.floor(month / 12), mos = month % 12;
+  const parts = [];
+  if (yrs) parts.push(`${yrs} yr${yrs !== 1 ? 's' : ''}`);
+  if (mos) parts.push(`${mos} mo`);
+  return parts.join(' ') || 'under a month';
+}
+
+// ── Monthly payment / PITI ──
+function wirePitiCalc() {
+  autoFillRate('piti-rate', 'OBMMIC30YF');
+  const elDown  = document.getElementById('piti-down');
+  const elPct   = document.getElementById('piti-down-pct');
+  const elPrice = document.getElementById('piti-price');
+  // Keep the down-payment dollar and percent fields in sync (programmatic
+  // .value assignment doesn't fire 'input', so these can't loop).
+  if (elDown) elDown.addEventListener('input', () => {
+    const p = num('piti-price');
+    if (p > 0) setVal('piti-down-pct', clamp(num('piti-down') / p * 100, 0, 100).toFixed(1));
+    recomputePiti();
+  });
+  if (elPct) elPct.addEventListener('input', () => {
+    setVal('piti-down', Math.round(num('piti-price') * clamp(num('piti-down-pct'), 0, 100) / 100));
+    recomputePiti();
+  });
+  if (elPrice) elPrice.addEventListener('input', () => {
+    setVal('piti-down', Math.round(num('piti-price') * clamp(num('piti-down-pct'), 0, 100) / 100));
+    recomputePiti();
+  });
+  ['piti-rate', 'piti-term', 'piti-tax', 'piti-insurance', 'piti-pmi', 'piti-hoa'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.addEventListener('input', recomputePiti);
+  });
+  const reset = document.getElementById('piti-reset');
+  if (reset) reset.addEventListener('click', () => {
+    setVal('piti-price', 450000); setVal('piti-down', 90000); setVal('piti-down-pct', 20);
+    if (autoFillRate('piti-rate', 'OBMMIC30YF') == null) setVal('piti-rate', 7);
+    setVal('piti-term', 30); setVal('piti-tax', 1.1); setVal('piti-insurance', 1800);
+    setVal('piti-pmi', 0.5); setVal('piti-hoa', 0);
+    recomputePiti();
+  });
+  recomputePiti();
+}
+
+function recomputePiti() {
+  const years = num('piti-term') || 30;
+  const r = computePITI({
+    homePrice: num('piti-price'), downPayment: num('piti-down'), ratePct: num('piti-rate'),
+    years, taxRatePct: num('piti-tax'), insuranceAnnual: num('piti-insurance'),
+    pmiAnnualPct: num('piti-pmi'), hoaMonthly: num('piti-hoa'),
+  });
+  const out = document.getElementById('piti-breakdown');
+  if (out) {
+    let html = calcItem('Total monthly payment', fmtUSD(r.totalMonthly), 'total');
+    html += calcItem('Principal &amp; interest', fmtUSD(r.piMonthly));
+    html += calcItem('Property tax', fmtUSD(r.taxMonthly));
+    html += calcItem('Home insurance', fmtUSD(r.insMonthly));
+    if (r.pmiMonthly > 0) html += calcItem('PMI', fmtUSD(r.pmiMonthly));
+    if (r.hoaMonthly > 0) html += calcItem('HOA', fmtUSD(r.hoaMonthly));
+    html += calcItem('Loan amount', fmtMoney(r.loan));
+    html += calcItem(`Total interest (${Math.round(years)} yr)`, fmtMoney(r.totalInterest));
+    if (r.pmiMonthly > 0 && r.pmiDropMonth) html += calcItem('PMI drops off in', monthsText(r.pmiDropMonth));
+    out.innerHTML = html;
+  }
+  const body = document.getElementById('piti-amort-body');
+  if (body) {
+    body.innerHTML = r.schedule.map(row =>
+      `<tr><td>${row.year}</td><td>${fmtMoney(row.principalPaid)}</td><td>${fmtMoney(row.interestPaid)}</td><td>${fmtMoney(row.balance)}</td></tr>`
+    ).join('');
+  }
+  if (pitiBalArea) {
+    const today = new Date();
+    const base = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+    const pts = [{ time: base.toISOString().slice(0, 10), value: r.loan }].concat(
+      r.schedule.map(row => ({
+        time: new Date(base.getFullYear() + row.year, base.getMonth(), base.getDate()).toISOString().slice(0, 10),
+        value: row.balance,
+      }))
+    );
+    pitiBalArea.setData(pts);
+    if (pitiChart) pitiChart.timeScale().fitContent();
+  }
+  throttledTrack('piti_calc_used', { rate: num('piti-rate'), term: years });
+}
+
+function initPitiChart() {
+  const host = document.getElementById('piti-chart');
+  if (!host || typeof LightweightCharts === 'undefined') return;
+  const css = getComputedStyle(document.documentElement);
+  const textColor = css.getPropertyValue('--ink-2').trim() || '#4a5568';
+  const gridColor = css.getPropertyValue('--border-2').trim() || '#eef0f6';
+  const accent    = css.getPropertyValue('--accent').trim()  || '#2c6cf6';
+  pitiChart = LightweightCharts.createChart(host, {
+    autoSize: true,
+    layout: { background: { type: 'solid', color: 'transparent' }, textColor, fontFamily: 'inherit' },
+    grid: { vertLines: { color: gridColor }, horzLines: { color: gridColor } },
+    crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
+    rightPriceScale: { borderVisible: false, scaleMargins: { top: 0.1, bottom: 0.1 } },
+    timeScale: { borderVisible: false, timeVisible: false, secondsVisible: false, rightOffset: 4 },
+  });
+  pitiBalArea = pitiChart.addAreaSeries({
+    lineColor: accent, topColor: 'rgba(44,108,246,0.25)', bottomColor: 'rgba(44,108,246,0.02)',
+    lineWidth: 2, title: 'Loan balance',
+  });
+  host.classList.add('has-chart');
+  recomputePiti();
+}
+
+// ── Affordability ──
+function wireAffordCalc() {
+  autoFillRate('afford-rate', 'OBMMIC30YF');
+  ['afford-income', 'afford-debts', 'afford-down', 'afford-rate', 'afford-term', 'afford-tax', 'afford-insurance', 'afford-front', 'afford-back'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.addEventListener('input', recomputeAfford);
+  });
+  const reset = document.getElementById('afford-reset');
+  if (reset) reset.addEventListener('click', () => {
+    setVal('afford-income', 120000); setVal('afford-debts', 500); setVal('afford-down', 60000);
+    if (autoFillRate('afford-rate', 'OBMMIC30YF') == null) setVal('afford-rate', 7);
+    setVal('afford-term', 30); setVal('afford-tax', 1.1); setVal('afford-insurance', 1800);
+    setVal('afford-front', 28); setVal('afford-back', 36);
+    recomputeAfford();
+  });
+  recomputeAfford();
+}
+
+function recomputeAfford() {
+  const frontDtiPct = num('afford-front') || 28;
+  const backDtiPct  = num('afford-back') || 36;
+  setText('afford-front-out', `${Math.round(frontDtiPct)}%`);
+  setText('afford-back-out', `${Math.round(backDtiPct)}%`);
+  const r = computeAffordability({
+    annualIncome: num('afford-income'), monthlyDebts: num('afford-debts'), downPayment: num('afford-down'),
+    ratePct: num('afford-rate'), years: num('afford-term') || 30, taxRatePct: num('afford-tax'),
+    insuranceAnnual: num('afford-insurance'), frontDtiPct, backDtiPct,
+  });
+  const out = document.getElementById('afford-results');
+  if (out) {
+    let html = calcItem('Home price you can afford', fmtMoney(r.maxPrice), 'total');
+    html += calcItem('Maximum loan', fmtMoney(r.maxLoan));
+    html += calcItem('Est. monthly payment', fmtUSD(r.monthlyPITI));
+    html += calcItem('Limited by', r.binding === 'back' ? 'Total debt (36%)' : 'Housing cost (28%)');
+    out.innerHTML = html;
+  }
+  const host = document.getElementById('afford-dti');
+  if (host) {
+    const front = Math.max(0, r.frontCap), back = Math.max(0, r.backCap);
+    const max = Math.max(front, back, 1);
+    host.innerHTML =
+      dtiRow(`Front-end (${Math.round(frontDtiPct)}%)`, front, front / max * 100, r.binding === 'front') +
+      dtiRow(`Back-end (${Math.round(backDtiPct)}%)`, back, back / max * 100, r.binding === 'back');
+  }
+  const note = document.getElementById('afford-note');
+  if (note) {
+    if (r.backCap <= 0) { note.textContent = 'Your monthly debts exceed the 36% back-end limit — paying down debt would raise your budget.'; note.hidden = false; }
+    else { note.hidden = true; note.textContent = ''; }
+  }
+  throttledTrack('affordability_calc_used', { rate: num('afford-rate'), binding: r.binding });
+}
+
+function dtiRow(label, value, pct, bind) {
+  return `<div class="dti-row"><span class="dti-cap">${label}</span><span class="dti-track"><span class="dti-fill${bind ? ' bind' : ''}" style="width:${Math.max(0, Math.min(100, pct))}%"></span></span><span class="dti-val">${fmtUSD(value)}/mo</span></div>`;
+}
+
+// ── Refinance break-even ──
+function wireRefiCalc() {
+  autoFillRate('refi-new-rate', 'OBMMIC30YF');
+  ['refi-balance', 'refi-current-rate', 'refi-remaining', 'refi-new-rate', 'refi-new-term', 'refi-costs', 'refi-cashout'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.addEventListener('input', recomputeRefi);
+  });
+  const reset = document.getElementById('refi-reset');
+  if (reset) reset.addEventListener('click', () => {
+    setVal('refi-balance', 350000); setVal('refi-current-rate', 7.0); setVal('refi-remaining', 25);
+    if (autoFillRate('refi-new-rate', 'OBMMIC30YF') == null) setVal('refi-new-rate', 6.5);
+    setVal('refi-new-term', 30); setVal('refi-costs', 6000); setVal('refi-cashout', 0);
+    recomputeRefi();
+  });
+  recomputeRefi();
+}
+
+function recomputeRefi() {
+  const r = computeRefi({
+    balance: num('refi-balance'), currentRatePct: num('refi-current-rate'),
+    remainingYears: num('refi-remaining') || 1, newRatePct: num('refi-new-rate'),
+    newYears: num('refi-new-term') || 30, closingCosts: num('refi-costs'), cashOut: num('refi-cashout'),
+  });
+  const out = document.getElementById('refi-results');
+  if (out) {
+    const saving = r.monthlySavings;
+    let html = calcItem(saving >= 0 ? 'Monthly savings' : 'Monthly increase', fmtUSD(Math.abs(saving)), 'total');
+    html += calcItem('New payment (P&amp;I)', fmtUSD(r.newPI));
+    html += calcItem('Current payment (P&amp;I)', fmtUSD(r.curPI));
+    if (!isFinite(r.breakEvenMonths) || saving <= 0) {
+      html += calcItem('Break-even', 'No break-even — payment is higher');
+    } else {
+      const m = Math.ceil(r.breakEvenMonths);
+      html += calcItem('Break-even', `${m} mo · ${monthsText(m)}`);
+    }
+    const diff = r.lifetimeInterestDiff;
+    html += calcItem(diff >= 0 ? 'Lifetime interest saved' : 'Lifetime interest added', fmtMoney(Math.abs(diff)));
+    out.innerHTML = html;
+  }
+  throttledTrack('refi_calc_used', { new_rate: num('refi-new-rate') });
+}
+
 // ─── Pay-off-early vs S&P 500 calculator ───────────────────────────
 // Apples-to-apples: same monthly outlay (P + extra) and same horizon N for
 // both strategies, so the comparison reduces to "where does the cash sit?"
@@ -728,9 +1057,7 @@ function simulatePayoff({ balance, ratePct, years, extra, returnPct }) {
   const N = Math.max(1, Math.round(years * 12));
   const rm = ratePct / 100 / 12;
   const sm = returnPct / 100 / 12;
-  const P = rm > 0
-    ? balance * (rm * Math.pow(1 + rm, N)) / (Math.pow(1 + rm, N) - 1)
-    : balance / N;
+  const P = monthlyPI(balance, ratePct, years);
 
   let mortA = balance, invA = 0;   // A: prepay, then invest after payoff
   let mortB = balance, invB = 0;   // B: pay base, invest extra throughout
@@ -760,20 +1087,29 @@ function simulatePayoff({ balance, ratePct, years, extra, returnPct }) {
 let payoffChart = null, payoffSeriesA = null, payoffSeriesB = null;
 let payoffEventTimer = null;
 
+// Numbers and controls work even if the chart CDN never loads, so wire them
+// here (always-on); renderPayoffCalc() only layers the chart on top.
+function wirePayoffCalc() {
+  autoFillRate('calc-rate', 'OBMMIC30YF');
+  ['calc-balance', 'calc-rate', 'calc-years', 'calc-extra', 'calc-return'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.addEventListener('input', recomputePayoff);
+  });
+  const resetBtn = document.getElementById('calc-reset');
+  if (resetBtn) resetBtn.addEventListener('click', () => {
+    setVal('calc-balance', 400000);
+    if (autoFillRate('calc-rate', 'OBMMIC30YF') == null) setVal('calc-rate', 7);
+    setVal('calc-years', 30);
+    setVal('calc-extra', 500);
+    setVal('calc-return', 8);
+    recomputePayoff();
+  });
+  recomputePayoff();
+}
+
 function renderPayoffCalc() {
   const host = document.getElementById('payoff-chart');
   if (!host || typeof LightweightCharts === 'undefined') return;
-
-  // Default the rate to the latest non-null 30-yr fixed observation if present.
-  const obs = (state.series.OBMMIC30YF || {}).observations || [];
-  let latestRate = null;
-  for (let i = obs.length - 1; i >= 0; i--) {
-    if (obs[i].value != null) { latestRate = obs[i].value; break; }
-  }
-  if (latestRate != null) {
-    const el = document.getElementById('calc-rate');
-    if (el) el.value = Number(latestRate).toFixed(2);
-  }
 
   const css = getComputedStyle(document.documentElement);
   const textColor = css.getPropertyValue('--ink-2').trim() || '#4a5568';
@@ -792,20 +1128,6 @@ function renderPayoffCalc() {
   payoffSeriesA = payoffChart.addLineSeries({ color: accent,    lineWidth: 2, title: 'Prepay net wealth' });
   payoffSeriesB = payoffChart.addLineSeries({ color: downColor, lineWidth: 2, title: 'Invest net wealth' });
 
-  ['calc-balance', 'calc-rate', 'calc-years', 'calc-extra', 'calc-return'].forEach(id => {
-    const el = document.getElementById(id);
-    if (el) el.addEventListener('input', recomputePayoff);
-  });
-  const resetBtn = document.getElementById('calc-reset');
-  if (resetBtn) resetBtn.addEventListener('click', () => {
-    document.getElementById('calc-balance').value = 400000;
-    document.getElementById('calc-rate').value    = latestRate != null ? Number(latestRate).toFixed(2) : 7;
-    document.getElementById('calc-years').value   = 30;
-    document.getElementById('calc-extra').value   = 500;
-    document.getElementById('calc-return').value  = 8;
-    recomputePayoff();
-  });
-
   recomputePayoff();
 }
 
@@ -821,15 +1143,17 @@ function recomputePayoff() {
 
   const { prepay, invest } = simulatePayoff({ balance, ratePct, years, extra, returnPct });
 
-  const today = new Date();
-  const base = new Date(today.getFullYear(), today.getMonth(), today.getDate());
-  const toPts = arr => arr.map(p => ({
-    time: new Date(base.getFullYear() + p.year, base.getMonth(), base.getDate()).toISOString().slice(0, 10),
-    value: p.net,
-  }));
-  payoffSeriesA.setData(toPts(prepay));
-  payoffSeriesB.setData(toPts(invest));
-  payoffChart.timeScale().fitContent();
+  if (payoffChart && payoffSeriesA && payoffSeriesB) {
+    const today = new Date();
+    const base = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+    const toPts = arr => arr.map(p => ({
+      time: new Date(base.getFullYear() + p.year, base.getMonth(), base.getDate()).toISOString().slice(0, 10),
+      value: p.net,
+    }));
+    payoffSeriesA.setData(toPts(prepay));
+    payoffSeriesB.setData(toPts(invest));
+    payoffChart.timeScale().fitContent();
+  }
 
   const endA = prepay.length ? prepay[prepay.length - 1].net : 0;
   const endB = invest.length ? invest[invest.length - 1].net : 0;
@@ -853,6 +1177,11 @@ function fmtMoney(v) {
   if (a >= 1_000_000) return `${sign}$${(a / 1_000_000).toFixed(2)}M`;
   if (a >= 1_000)     return `${sign}$${Math.round(a / 1_000).toLocaleString()}k`;
   return `${sign}$${Math.round(a).toLocaleString()}`;
+}
+
+// Full-dollar currency for monthly figures (keeps cents-free clarity, no $k/$M).
+function fmtUSD(v) {
+  return (Number(v) || 0).toLocaleString('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 });
 }
 
 // ─── Helpers ───────────────────────────────────────────────────────
