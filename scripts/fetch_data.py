@@ -24,6 +24,7 @@ import json
 import math
 import os
 import random
+import re
 import sys
 import time
 from pathlib import Path
@@ -38,6 +39,15 @@ HISTORY_YEARS = 5
 NEWS_DAYS_KEEP = 10
 NEWS_PER_DAY = 10
 
+# Strip secrets (the FRED api_key) from any text before it can reach logs,
+# soft_errors, or the committed meta.json.
+_SECRET_RE = re.compile(r"(api_key=)[^&\s]+")
+
+
+def _redact(text: object) -> str:
+    return _SECRET_RE.sub(r"\1REDACTED", str(text))
+
+
 # ─── Series catalogue ──────────────────────────────────────────────
 # Every FRED ID we pull, plus the explanation we render alongside it.
 
@@ -46,7 +56,7 @@ MORTGAGE_SERIES = {
     "MORTGAGE15US":   {"title": "15-Year Fixed Mortgage Average", "source": "Freddie Mac PMMS", "unit": "pct"},
     "OBMMIC30YF":     {"title": "Optimal Blue 30Y Conforming",    "source": "Optimal Blue OBMMI", "unit": "pct"},
     "OBMMIC15YF":     {"title": "Optimal Blue 15Y Conforming",    "source": "Optimal Blue OBMMI", "unit": "pct"},
-    "OBMMIJ30YF":     {"title": "Optimal Blue 30Y Jumbo",         "source": "Optimal Blue OBMMI", "unit": "pct"},
+    "OBMMIJUMBO30YF": {"title": "Optimal Blue 30Y Jumbo",         "source": "Optimal Blue OBMMI", "unit": "pct"},
     "OBMMIFHA30YF":   {"title": "Optimal Blue 30Y FHA",           "source": "Optimal Blue OBMMI", "unit": "pct"},
     "OBMMIVA30YF":    {"title": "Optimal Blue 30Y VA",            "source": "Optimal Blue OBMMI", "unit": "pct"},
 }
@@ -108,7 +118,7 @@ RATE_TABLE_PRODUCTS = [
     ("15yr_fixed",   "15-Year Fixed",   "Conventional, conforming",
      {"freddie_mac": "MORTGAGE15US", "obmmi": "OBMMIC15YF"}, "OBMMIC15YF"),
     ("jumbo_30",     "30-Year Jumbo",   "Above conforming limit",
-     {"obmmi": "OBMMIJ30YF"},        "OBMMIJ30YF"),
+     {"obmmi": "OBMMIJUMBO30YF"},    "OBMMIJUMBO30YF"),
     ("fha_30",       "30-Year FHA",     "Federal Housing Administration",
      {"obmmi": "OBMMIFHA30YF"},      "OBMMIFHA30YF"),
     ("va_30",        "30-Year VA",      "Veterans Affairs",
@@ -259,7 +269,7 @@ def bootstrap_series() -> dict[str, list[dict]]:
         "MORTGAGE5US":    walk(2.75, 0.0035, 0.06, "weekly", lo=2.0, hi=7.5),
         "OBMMIC30YF":     walk(3.20, 0.0006, 0.04, "daily",  lo=2.5, hi=8.5),
         "OBMMIC15YF":     walk(2.55, 0.0006, 0.04, "daily",  lo=2.0, hi=7.5),
-        "OBMMIJ30YF":     walk(3.05, 0.0006, 0.04, "daily",  lo=2.5, hi=8.5),
+        "OBMMIJUMBO30YF": walk(3.05, 0.0006, 0.04, "daily",  lo=2.5, hi=8.5),
         "OBMMIFHA30YF":   walk(3.10, 0.0006, 0.04, "daily",  lo=2.5, hi=8.5),
         "OBMMIVA30YF":    walk(2.95, 0.0006, 0.04, "daily",  lo=2.4, hi=8.5),
         "DGS10":          walk(1.55, 0.0006, 0.04, "daily",  lo=0.5, hi=6.0),
@@ -432,7 +442,6 @@ def run_production() -> int:
         print("FRED_API_KEY not set — refusing to run production fetch. Use --bootstrap for offline mode.", file=sys.stderr)
         return 2
 
-    fred_ok = True
     rss_ok = True
     soft_errors: list[str] = []
     series: dict[str, list[dict]] = {}
@@ -454,8 +463,7 @@ def run_production() -> int:
             series[sid] = fetch_fred(sid, api_key)
             time.sleep(0.15)  # FRED is generous but be polite
         except Exception as e:
-            soft_errors.append(f"FRED {sid}: {e}")
-            fred_ok = False
+            soft_errors.append(_redact(f"FRED {sid}: {e}"))
             series[sid] = []
 
     if "MORTGAGE30US" in series and "DGS10" in series:
@@ -468,10 +476,14 @@ def run_production() -> int:
         by_day = fetch_news()
         news_count = sum(len(v) for v in by_day.values())
     except Exception as e:
-        soft_errors.append(f"RSS: {e}")
+        soft_errors.append(_redact(f"RSS: {e}"))
         rss_ok = False
         by_day = {}
         news_count = 0
+
+    # Freshness reflects core-series health — one optional series failing (or a
+    # provider discontinuing an id) must not blanket-flag the whole site stale.
+    fred_ok = all(series.get(sid) for sid in ("MORTGAGE30US", "OBMMIC30YF"))
 
     series_json = build_series_json(series)
     news_json   = build_news_json(by_day)
